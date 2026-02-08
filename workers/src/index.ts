@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 
 const envFile = process.env.NODE_ENV === 'production' ? '.env.prod' : '.env.dev';
-dotenv.config({ path: path.resolve(__dirname, '../../..', envFile) });
+dotenv.config({ path: path.join(process.cwd(), '..', envFile) });
 import { Worker, Queue } from 'bullmq';
 import Redis from 'ioredis';
 import { QUEUE_NAMES } from '@mailhub/shared';

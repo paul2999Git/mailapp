@@ -3,8 +3,8 @@ import dotenv from 'dotenv';
 import path from 'path';
 
 const envFile = process.env.NODE_ENV === 'production' ? '.env.prod' : '.env.dev';
-// Go up from server/src to project root
-dotenv.config({ path: path.resolve(__dirname, '../../..', envFile) });
+// Go up from workspace (server/) to project root
+dotenv.config({ path: path.join(process.cwd(), '..', envFile) });
 
 import express from 'express';
 import cors from 'cors';
