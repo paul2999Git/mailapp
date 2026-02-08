@@ -23,16 +23,14 @@ const GMAIL_SCOPES = [
     'https://www.googleapis.com/auth/userinfo.email',
 ];
 
-// GET /api/oauth/google/url - Get OAuth authorization URL
-router.get('/google/url', requireAuth, (req: Request, res: Response) => {
-    const authReq = req as AuthRequest;
+// GET /api/oauth/google/url - Get OAuth authorization URL (public)
+router.get('/google/url', (req: Request, res: Response) => {
     const oauth2Client = getOAuth2Client();
 
     const url = oauth2Client.generateAuthUrl({
         access_type: 'offline',
         scope: GMAIL_SCOPES,
         prompt: 'consent',
-        state: authReq.user!.id, // Pass user ID in state for callback
     });
 
     res.json({
