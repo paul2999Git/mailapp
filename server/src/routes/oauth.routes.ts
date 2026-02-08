@@ -4,6 +4,7 @@ import { prisma } from '../lib/db';
 import { encrypt } from '../lib/encryption';
 import { requireAuth, AuthRequest } from '../middleware/auth.middleware';
 import { errors } from '../middleware/errorHandler';
+import { signState, verifyState } from '../utils/oauthState';
 
 const router = Router();
 
@@ -23,30 +24,48 @@ const GMAIL_SCOPES = [
     'https://www.googleapis.com/auth/userinfo.email',
 ];
 
-// GET /api/oauth/google/url - Get OAuth authorization URL (public)
-router.get('/google/url', (req: Request, res: Response) => {
-    const oauth2Client = getOAuth2Client();
+// GET /api/oauth/google/url?userId=xxx - Get OAuth authorization URL (public)
+router.get('/google/url', (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const userId = req.query.userId as string | undefined;
+        if (!userId) {
+            throw errors.badRequest('Missing userId query parameter');
+        }
 
-    const url = oauth2Client.generateAuthUrl({
-        access_type: 'offline',
-        scope: GMAIL_SCOPES,
-        prompt: 'consent',
-    });
+        const oauth2Client = getOAuth2Client();
+        const state = signState(userId);
 
-    res.json({
-        success: true,
-        data: { url },
-    });
+        const url = oauth2Client.generateAuthUrl({
+            access_type: 'offline',
+            scope: GMAIL_SCOPES,
+            prompt: 'consent',
+            state,
+        });
+
+        res.json({
+            success: true,
+            data: { url },
+        });
+    } catch (error) {
+        next(error);
+    }
 });
 
-// GET /api/oauth/google/callback - Handle OAuth callback
+// GET /api/oauth/google/callback - Handle OAuth callback (public)
 router.get('/google/callback', async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { code, state: userId } = req.query;
+        const { code, state } = req.query;
 
-        if (!code || !userId) {
+        if (!code || !state) {
             throw errors.badRequest('Missing code or state parameter');
         }
+
+        const verified = verifyState(state as string);
+        if (!verified) {
+            throw errors.badRequest('Invalid or expired OAuth state');
+        }
+
+        const { userId } = verified;
 
         const oauth2Client = getOAuth2Client();
 
@@ -70,7 +89,7 @@ router.get('/google/callback', async (req: Request, res: Response, next: NextFun
         // Check if account already exists
         const existingAccount = await prisma.account.findFirst({
             where: {
-                userId: userId as string,
+                userId,
                 emailAddress: email,
             },
         });
@@ -89,7 +108,7 @@ router.get('/google/callback', async (req: Request, res: Response, next: NextFun
             // Create new account
             await prisma.account.create({
                 data: {
-                    userId: userId as string,
+                    userId,
                     provider: 'gmail',
                     emailAddress: email,
                     displayName: userInfo.data.name || email,
