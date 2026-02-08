@@ -1,4 +1,6 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+dotenv.config({ path: process.env.NODE_ENV === 'production' ? '.env.prod' : '.env.dev' });
+
 import { app } from './app';
 import { prisma } from './lib/db';
 import { redis } from './lib/redis';

@@ -1,4 +1,5 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+dotenv.config({ path: process.env.NODE_ENV === 'production' ? '.env.prod' : '.env.dev' });
 import { Worker, Queue } from 'bullmq';
 import Redis from 'ioredis';
 import { QUEUE_NAMES } from '@mailhub/shared';
