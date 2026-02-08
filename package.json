@@ -1,0 +1,34 @@
+{
+    "name": "mailhub",
+    "version": "1.0.0",
+    "private": true,
+    "workspaces": [
+        "client",
+        "server",
+        "workers",
+        "shared"
+    ],
+    "scripts": {
+        "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\" \"npm run dev:workers\"",
+        "dev:client": "npm run dev --workspace=client",
+        "dev:server": "npm run dev --workspace=server",
+        "dev:workers": "npm run dev --workspace=workers",
+        "build": "npm run build --workspaces",
+        "db:migrate": "prisma migrate dev",
+        "db:generate": "prisma generate",
+        "db:studio": "prisma studio",
+        "docker:up": "docker-compose up -d",
+        "docker:down": "docker-compose down"
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.2",
+        "prisma": "^5.10.0",
+        "typescript": "^5.3.0"
+    },
+    "dependencies": {
+        "@prisma/client": "^5.10.0"
+    },
+    "engines": {
+        "node": ">=20.0.0"
+    }
+}

@@ -1,0 +1,364 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// USERS & AUTHENTICATION
+// ============================================================================
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique @db.VarChar(255)
+  displayName  String?   @map("display_name") @db.VarChar(255)
+  passwordHash String?   @map("password_hash") @db.VarChar(255)
+  settings     Json      @default("{}")
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  accounts      Account[]
+  threads       Thread[]
+  categories    Category[]
+  userOverrides UserOverride[]
+  learnedRules  LearnedRule[]
+  auditLogs     AuditLog[]     @relation("UserAuditLogs")
+  undoneBy      AuditLog[]     @relation("UndoneByUser")
+
+  @@map("users")
+}
+
+// ============================================================================
+// EMAIL ACCOUNTS & PROVIDERS
+// ============================================================================
+
+enum ProviderType {
+  gmail
+  proton
+  hover
+  zoho
+}
+
+model Account {
+  id                     String       @id @default(uuid()) @db.Uuid
+  userId                 String       @map("user_id") @db.Uuid
+  provider               ProviderType
+  emailAddress           String       @map("email_address") @db.VarChar(255)
+  displayName            String?      @map("display_name") @db.VarChar(255)
+  
+  // OAuth tokens (encrypted)
+  accessTokenEncrypted   Bytes?       @map("access_token_encrypted")
+  refreshTokenEncrypted  Bytes?       @map("refresh_token_encrypted")
+  tokenExpiresAt         DateTime?    @map("token_expires_at") @db.Timestamptz
+  
+  // IMAP/SMTP credentials (for Proton Bridge, Hover)
+  imapHost               String?      @map("imap_host") @db.VarChar(255)
+  imapPort               Int?         @map("imap_port")
+  smtpHost               String?      @map("smtp_host") @db.VarChar(255)
+  smtpPort               Int?         @map("smtp_port")
+  imapUsername           String?      @map("imap_username") @db.VarChar(255)
+  imapPasswordEncrypted  Bytes?       @map("imap_password_encrypted")
+  
+  // Sync state
+  lastSyncAt             DateTime?    @map("last_sync_at") @db.Timestamptz
+  syncCursor             String?      @map("sync_cursor") @db.Text
+  backfillTargetDate     DateTime?    @map("backfill_target_date") @db.Date
+  isEnabled              Boolean      @default(true) @map("is_enabled")
+  
+  createdAt              DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folders   Folder[]
+  messages  Message[]
+  syncJobs  SyncJob[]
+
+  @@unique([userId, emailAddress])
+  @@index([userId])
+  @@index([provider])
+  @@map("accounts")
+}
+
+// ============================================================================
+// FOLDERS
+// ============================================================================
+
+model Folder {
+  id               String   @id @default(uuid()) @db.Uuid
+  accountId        String   @map("account_id") @db.Uuid
+  providerFolderId String   @map("provider_folder_id") @db.VarChar(255)
+  name             String   @db.VarChar(255)
+  fullPath         String?  @map("full_path") @db.VarChar(1024)
+  folderType       String?  @map("folder_type") @db.VarChar(50)
+  isSystem         Boolean  @default(false) @map("is_system")
+  isAiManaged      Boolean  @default(false) @map("is_ai_managed")
+  messageCount     Int      @default(0) @map("message_count")
+  unreadCount      Int      @default(0) @map("unread_count")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  messages  Message[]
+  userOverrides UserOverride[]
+
+  @@unique([accountId, providerFolderId])
+  @@index([accountId])
+  @@map("folders")
+}
+
+// ============================================================================
+// MESSAGES & THREADS
+// ============================================================================
+
+model Thread {
+  id                 String    @id @default(uuid()) @db.Uuid
+  userId             String    @map("user_id") @db.Uuid
+  subjectNormalized  String?   @map("subject_normalized") @db.VarChar(255)
+  participantEmails  Json?     @map("participant_emails")
+  firstMessageDate   DateTime? @map("first_message_date") @db.Timestamptz
+  lastMessageDate    DateTime? @map("last_message_date") @db.Timestamptz
+  messageCount       Int       @default(0) @map("message_count")
+  unreadCount        Int       @default(0) @map("unread_count")
+  accountIds         String[]  @map("account_ids") @db.Uuid
+  hasAttachments     Boolean   @default(false) @map("has_attachments")
+  primaryCategory    String?   @map("primary_category") @db.VarChar(100)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@index([userId])
+  @@index([lastMessageDate(sort: Desc)])
+  @@index([primaryCategory])
+  @@map("threads")
+}
+
+model Message {
+  id                   String    @id @default(uuid()) @db.Uuid
+  accountId            String    @map("account_id") @db.Uuid
+  providerMessageId    String    @map("provider_message_id") @db.VarChar(512)
+  threadId             String?   @map("thread_id") @db.Uuid
+  
+  // RFC 5322 headers for threading
+  messageIdHeader      String?   @map("message_id_header") @db.VarChar(512)
+  inReplyTo            String?   @map("in_reply_to") @db.VarChar(512)
+  referencesHeader     String?   @map("references_header") @db.Text
+  
+  // Core message data
+  subject              String?   @db.Text
+  fromAddress          String?   @map("from_address") @db.VarChar(255)
+  fromName             String?   @map("from_name") @db.VarChar(255)
+  toAddresses          Json?     @map("to_addresses")
+  ccAddresses          Json?     @map("cc_addresses")
+  bccAddresses         Json?     @map("bcc_addresses")
+  dateSent             DateTime? @map("date_sent") @db.Timestamptz
+  dateReceived         DateTime? @map("date_received") @db.Timestamptz
+  
+  // Body content
+  bodyText             String?   @map("body_text") @db.Text
+  bodyHtml             String?   @map("body_html") @db.Text
+  bodyPreview          String?   @map("body_preview") @db.VarChar(1000)
+  
+  // Metadata
+  hasAttachments       Boolean   @default(false) @map("has_attachments")
+  attachmentMetadata   Json?     @map("attachment_metadata")
+  sizeBytes            Int?      @map("size_bytes")
+  isRead               Boolean   @default(false) @map("is_read")
+  isStarred            Boolean   @default(false) @map("is_starred")
+  isDraft              Boolean   @default(false) @map("is_draft")
+  
+  // Folder location
+  currentFolderId      String?   @map("current_folder_id") @db.Uuid
+  providerLabels       Json?     @map("provider_labels")
+  
+  // AI classification
+  aiCategory           String?   @map("ai_category") @db.VarChar(100)
+  aiSubcategory        String?   @map("ai_subcategory") @db.VarChar(100)
+  aiConfidence         Decimal?  @map("ai_confidence") @db.Decimal(5, 4)
+  aiClassificationId   String?   @map("ai_classification_id") @db.Uuid
+  
+  // Status flags
+  isHidden             Boolean   @default(false) @map("is_hidden")
+  isAiTrashed          Boolean   @default(false) @map("is_ai_trashed")
+  isQuarantined        Boolean   @default(false) @map("is_quarantined")
+  neverShow            Boolean   @default(false) @map("never_show")
+  
+  // Timestamps
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  indexedAt            DateTime? @map("indexed_at") @db.Timestamptz
+
+  account          Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  thread           Thread?           @relation(fields: [threadId], references: [id])
+  currentFolder    Folder?           @relation(fields: [currentFolderId], references: [id])
+  classifications  AiClassification[]
+  userOverrides    UserOverride[]
+  auditLogs        AuditLog[]
+
+  @@unique([accountId, providerMessageId])
+  @@index([accountId])
+  @@index([threadId])
+  @@index([currentFolderId])
+  @@index([dateReceived(sort: Desc)])
+  @@index([aiCategory])
+  @@map("messages")
+}
+
+// ============================================================================
+// AI CLASSIFICATION & LEARNING
+// ============================================================================
+
+model Category {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String?   @map("user_id") @db.Uuid
+  name        String    @db.VarChar(100)
+  parentId    String?   @map("parent_id") @db.Uuid
+  description String?   @db.Text
+  color       String?   @db.VarChar(7)
+  icon        String?   @db.VarChar(50)
+  priority    Int       @default(50)
+  isSystem    Boolean   @default(false) @map("is_system")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user                  User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent                Category?         @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children              Category[]        @relation("CategoryHierarchy")
+  classifications       AiClassification[] @relation("CategoryClassifications")
+  subcategoryClassifications AiClassification[] @relation("SubcategoryClassifications")
+  originalOverrides     UserOverride[]    @relation("OriginalCategory")
+  newOverrides          UserOverride[]    @relation("NewCategory")
+  learnedRules          LearnedRule[]
+
+  @@map("categories")
+}
+
+model AiClassification {
+  id               String   @id @default(uuid()) @db.Uuid
+  messageId        String   @map("message_id") @db.Uuid
+  categoryId       String?  @map("category_id") @db.Uuid
+  subcategoryId    String?  @map("subcategory_id") @db.Uuid
+  confidence       Decimal  @db.Decimal(5, 4)
+  explanation      String   @db.Text
+  reasoningFactors Json?    @map("reasoning_factors")
+  aiModel          String   @map("ai_model") @db.VarChar(50)
+  promptVersion    String?  @map("prompt_version") @db.VarChar(20)
+  inputSummary     Json?    @map("input_summary")
+  usedBodyContent  Boolean  @default(false) @map("used_body_content")
+  bodyCharsSent    Int?     @map("body_chars_sent")
+  processingTimeMs Int?     @map("processing_time_ms")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  message     Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  category    Category? @relation("CategoryClassifications", fields: [categoryId], references: [id])
+  subcategory Category? @relation("SubcategoryClassifications", fields: [subcategoryId], references: [id])
+  auditLogs   AuditLog[]
+
+  @@index([messageId])
+  @@index([categoryId])
+  @@map("ai_classifications")
+}
+
+model UserOverride {
+  id                 String   @id @default(uuid()) @db.Uuid
+  userId             String   @map("user_id") @db.Uuid
+  messageId          String   @map("message_id") @db.Uuid
+  originalCategoryId String?  @map("original_category_id") @db.Uuid
+  originalConfidence Decimal? @map("original_confidence") @db.Decimal(5, 4)
+  actionType         String   @map("action_type") @db.VarChar(50)
+  newCategoryId      String?  @map("new_category_id") @db.Uuid
+  newFolderId        String?  @map("new_folder_id") @db.Uuid
+  makePermanent      Boolean  @default(false) @map("make_permanent")
+  applyToSender      Boolean  @default(false) @map("apply_to_sender")
+  applyToDomain      Boolean  @default(false) @map("apply_to_domain")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message          Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  originalCategory Category? @relation("OriginalCategory", fields: [originalCategoryId], references: [id])
+  newCategory      Category? @relation("NewCategory", fields: [newCategoryId], references: [id])
+  newFolder        Folder?   @relation(fields: [newFolderId], references: [id])
+
+  @@unique([messageId, actionType])
+  @@index([userId])
+  @@index([messageId])
+  @@map("user_overrides")
+}
+
+model LearnedRule {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  matchType        String    @map("match_type") @db.VarChar(20)
+  matchValue       String    @map("match_value") @db.VarChar(255)
+  targetCategoryId String?   @map("target_category_id") @db.Uuid
+  action           String    @db.VarChar(50)
+  priority         Int       @default(50)
+  confidenceBoost  Decimal   @default(0.2) @map("confidence_boost") @db.Decimal(5, 4)
+  timesApplied     Int       @default(0) @map("times_applied")
+  lastAppliedAt    DateTime? @map("last_applied_at") @db.Timestamptz
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetCategory Category? @relation(fields: [targetCategoryId], references: [id])
+
+  @@unique([userId, matchType, matchValue])
+  @@index([userId])
+  @@index([matchType, matchValue])
+  @@map("learned_rules")
+}
+
+// ============================================================================
+// AUDIT & JOBS
+// ============================================================================
+
+model AuditLog {
+  id                 String    @id @default(uuid()) @db.Uuid
+  userId             String?   @map("user_id") @db.Uuid
+  actionType         String    @map("action_type") @db.VarChar(50)
+  entityType         String    @map("entity_type") @db.VarChar(50)
+  entityId           String?   @map("entity_id") @db.Uuid
+  previousState      Json?     @map("previous_state")
+  newState           Json?     @map("new_state")
+  triggeredBy        String    @map("triggered_by") @db.VarChar(50)
+  aiClassificationId String?   @map("ai_classification_id") @db.Uuid
+  isUndoable         Boolean   @default(true) @map("is_undoable")
+  undoneAt           DateTime? @map("undone_at") @db.Timestamptz
+  undoneById         String?   @map("undone_by") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user             User?             @relation("UserAuditLogs", fields: [userId], references: [id], onDelete: SetNull)
+  undoneBy         User?             @relation("UndoneByUser", fields: [undoneById], references: [id])
+  aiClassification AiClassification? @relation(fields: [aiClassificationId], references: [id])
+  message          Message?          @relation(fields: [entityId], references: [id])
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+model SyncJob {
+  id                String    @id @default(uuid()) @db.Uuid
+  accountId         String    @map("account_id") @db.Uuid
+  jobType           String    @map("job_type") @db.VarChar(50)
+  status            String    @db.VarChar(20)
+  startedAt         DateTime? @map("started_at") @db.Timestamptz
+  completedAt       DateTime? @map("completed_at") @db.Timestamptz
+  messagesProcessed Int       @default(0) @map("messages_processed")
+  messagesNew       Int       @default(0) @map("messages_new")
+  messagesUpdated   Int       @default(0) @map("messages_updated")
+  errorMessage      String?   @map("error_message") @db.Text
+  retryCount        Int       @default(0) @map("retry_count")
+  nextRetryAt       DateTime? @map("next_retry_at") @db.Timestamptz
+  idempotencyKey    String?   @unique @map("idempotency_key") @db.VarChar(255)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, createdAt(sort: Desc)])
+  @@index([status, nextRetryAt])
+  @@map("sync_jobs")
+}

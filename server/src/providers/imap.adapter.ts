@@ -1,0 +1,340 @@
+import { ImapFlow } from 'imapflow';
+import { simpleParser, ParsedMail, AddressObject } from 'mailparser';
+import type { ProviderType, EmailAddress } from '@mailhub/shared';
+import type {
+    IProviderAdapter,
+    ImapConfig,
+    NormalizedMessage,
+    NormalizedFolder,
+    SyncResult,
+} from './types';
+
+/**
+ * Base IMAP adapter for providers using standard IMAP
+ * Used by: Proton (via Bridge), Hover, Zoho (fallback)
+ */
+export class ImapAdapter implements IProviderAdapter {
+    readonly provider: ProviderType;
+    private client: ImapFlow | null = null;
+    private config: ImapConfig;
+    private accountId: string;
+
+    constructor(provider: ProviderType, accountId: string, config: ImapConfig) {
+        this.provider = provider;
+        this.accountId = accountId;
+        this.config = config;
+    }
+
+    private async getClient(): Promise<ImapFlow> {
+        if (!this.client) {
+            this.client = new ImapFlow({
+                host: this.config.host,
+                port: this.config.port,
+                secure: this.config.tls,
+                auth: {
+                    user: this.config.username,
+                    pass: this.config.password,
+                },
+                logger: false,
+            });
+            await this.client.connect();
+        }
+        return this.client;
+    }
+
+    async testConnection(): Promise<{ success: boolean; error?: string }> {
+        try {
+            const client = await this.getClient();
+            await client.noop();
+            return { success: true };
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Connection failed',
+            };
+        }
+    }
+
+    async fetchFolders(): Promise<NormalizedFolder[]> {
+        const client = await this.getClient();
+        const folders: NormalizedFolder[] = [];
+
+        const mailboxes = await client.list();
+
+        for (const mailbox of mailboxes) {
+            const status = await client.status(mailbox.path, {
+                messages: true,
+                unseen: true,
+            });
+
+            folders.push({
+                providerFolderId: mailbox.path,
+                name: mailbox.name,
+                fullPath: mailbox.path,
+                folderType: this.mapFolderType(mailbox),
+                isSystem: mailbox.specialUse !== undefined,
+                messageCount: status.messages || 0,
+                unreadCount: status.unseen || 0,
+            });
+        }
+
+        return folders;
+    }
+
+    private mapFolderType(mailbox: any): NormalizedFolder['folderType'] {
+        if (mailbox.specialUse === '\\Inbox') return 'inbox';
+        if (mailbox.specialUse === '\\Sent') return 'sent';
+        if (mailbox.specialUse === '\\Drafts') return 'drafts';
+        if (mailbox.specialUse === '\\Trash') return 'trash';
+        if (mailbox.specialUse === '\\Junk') return 'spam';
+        if (mailbox.specialUse === '\\Archive') return 'archive';
+        return 'custom';
+    }
+
+    async syncMessages(cursor?: string | null, folderId?: string | null): Promise<SyncResult> {
+        const client = await this.getClient();
+        const messages: NormalizedMessage[] = [];
+        const targetFolder = folderId || 'INBOX';
+
+        const lock = await client.getMailboxLock(targetFolder);
+
+        try {
+            // Parse cursor as UID for incremental sync
+            const sinceUid = cursor ? parseInt(cursor, 10) : 1;
+
+            // Fetch messages since cursor
+            const searchCriteria = cursor ? { uid: `${sinceUid}:*` } : { all: true };
+
+            let count = 0;
+            const maxMessages = 100; // Limit per sync
+            let lastUid = sinceUid;
+
+            for await (const msg of client.fetch(searchCriteria, {
+                uid: true,
+                flags: true,
+                envelope: true,
+                bodyStructure: true,
+                source: true,
+            })) {
+                if (count >= maxMessages) break;
+                if (!msg.source) continue;
+
+                const parsed = await simpleParser(msg.source);
+                messages.push(this.normalizeMessage(msg, parsed));
+                lastUid = Math.max(lastUid, msg.uid);
+                count++;
+            }
+
+            return {
+                messages,
+                folders: [],
+                newCursor: String(lastUid + 1),
+                hasMore: count === maxMessages,
+                stats: {
+                    messagesProcessed: count,
+                    messagesNew: count,
+                    messagesUpdated: 0,
+                },
+            };
+        } finally {
+            lock.release();
+        }
+    }
+
+    private normalizeMessage(imapMsg: any, parsed: ParsedMail): NormalizedMessage {
+        const refs = parsed.references;
+        const referencesStr = Array.isArray(refs) ? refs.join(' ') : (refs || null);
+
+        return {
+            providerMessageId: String(imapMsg.uid),
+            messageIdHeader: parsed.messageId || null,
+            inReplyTo: parsed.inReplyTo || null,
+            referencesHeader: referencesStr,
+
+            subject: parsed.subject || null,
+            from: this.parseAddress(parsed.from),
+            to: this.parseAddressField(parsed.to),
+            cc: this.parseAddressField(parsed.cc),
+            bcc: this.parseAddressField(parsed.bcc),
+            replyTo: parsed.replyTo?.text || null,
+
+            dateSent: parsed.date || null,
+            dateReceived: parsed.date || new Date(),
+
+            bodyText: parsed.text || null,
+            bodyHtml: parsed.html || null,
+            bodyPreview: parsed.text?.substring(0, 500) || null,
+
+            hasAttachments: (parsed.attachments?.length || 0) > 0,
+            attachments: parsed.attachments?.map(a => ({
+                name: a.filename || 'attachment',
+                size: a.size || 0,
+                mimeType: a.contentType || 'application/octet-stream',
+            })) || [],
+            sizeBytes: parsed.text?.length || null,
+
+            isRead: imapMsg.flags?.has('\\Seen') || false,
+            isStarred: imapMsg.flags?.has('\\Flagged') || false,
+            isDraft: imapMsg.flags?.has('\\Draft') || false,
+
+            providerLabels: Array.from(imapMsg.flags || []),
+            folderId: null,
+        };
+    }
+
+    private parseAddress(addr: AddressObject | undefined): EmailAddress {
+        if (!addr?.value?.[0]) {
+            return { email: 'unknown@unknown.com' };
+        }
+        return {
+            email: addr.value[0].address || 'unknown@unknown.com',
+            name: addr.value[0].name,
+        };
+    }
+
+    private parseAddresses(addr: AddressObject | undefined): EmailAddress[] {
+        if (!addr?.value) return [];
+        return addr.value.map(a => ({
+            email: a.address || 'unknown@unknown.com',
+            name: a.name,
+        }));
+    }
+
+    private parseAddressField(addr: AddressObject | AddressObject[] | undefined): EmailAddress[] {
+        if (!addr) return [];
+        if (Array.isArray(addr)) {
+            return addr.flatMap(a => this.parseAddresses(a));
+        }
+        return this.parseAddresses(addr);
+    }
+
+    async fetchMessage(providerMessageId: string): Promise<NormalizedMessage | null> {
+        const client = await this.getClient();
+        const lock = await client.getMailboxLock('INBOX');
+
+        try {
+            const msg = await client.fetchOne(providerMessageId, {
+                uid: true,
+                flags: true,
+                envelope: true,
+                source: true,
+            }, { uid: true });
+
+            if (!msg || !msg.source) return null;
+
+            const parsed = await simpleParser(msg.source);
+            return this.normalizeMessage(msg, parsed);
+        } finally {
+            lock.release();
+        }
+    }
+
+    async markRead(providerMessageId: string, isRead: boolean): Promise<void> {
+        const client = await this.getClient();
+        const lock = await client.getMailboxLock('INBOX');
+
+        try {
+            if (isRead) {
+                await client.messageFlagsAdd(providerMessageId, ['\\Seen'], { uid: true });
+            } else {
+                await client.messageFlagsRemove(providerMessageId, ['\\Seen'], { uid: true });
+            }
+        } finally {
+            lock.release();
+        }
+    }
+
+    async markStarred(providerMessageId: string, isStarred: boolean): Promise<void> {
+        const client = await this.getClient();
+        const lock = await client.getMailboxLock('INBOX');
+
+        try {
+            if (isStarred) {
+                await client.messageFlagsAdd(providerMessageId, ['\\Flagged'], { uid: true });
+            } else {
+                await client.messageFlagsRemove(providerMessageId, ['\\Flagged'], { uid: true });
+            }
+        } finally {
+            lock.release();
+        }
+    }
+
+    async moveToFolder(providerMessageId: string, folderId: string): Promise<void> {
+        const client = await this.getClient();
+        const lock = await client.getMailboxLock('INBOX');
+
+        try {
+            await client.messageMove(providerMessageId, folderId, { uid: true });
+        } finally {
+            lock.release();
+        }
+    }
+
+    async moveToTrash(providerMessageId: string): Promise<void> {
+        await this.moveToFolder(providerMessageId, 'Trash');
+    }
+
+    async archive(providerMessageId: string): Promise<void> {
+        await this.moveToFolder(providerMessageId, 'Archive');
+    }
+
+    async saveDraft(to: EmailAddress[], subject: string, body: string, inReplyTo?: string): Promise<string> {
+        const client = await this.getClient();
+
+        const message = [
+            `From: ${this.config.username}`,
+            `To: ${to.map(a => a.name ? `${a.name} <${a.email}>` : a.email).join(', ')}`,
+            `Subject: ${subject}`,
+            inReplyTo ? `In-Reply-To: ${inReplyTo}` : '',
+            `Date: ${new Date().toUTCString()}`,
+            `Content-Type: text/plain; charset=utf-8`,
+            '',
+            body,
+        ].filter(Boolean).join('\r\n');
+
+        const result = await client.append('Drafts', Buffer.from(message), ['\\Draft']);
+        if (result && typeof result === 'object' && 'uid' in result) {
+            return String(result.uid) || 'draft';
+        }
+        return 'draft';
+    }
+
+    async disconnect(): Promise<void> {
+        if (this.client) {
+            await this.client.logout();
+            this.client = null;
+        }
+    }
+}
+
+/**
+ * Proton Mail adapter - uses IMAP via Proton Bridge
+ * Privacy: Body content stays local, never sent to AI
+ */
+export class ProtonAdapter extends ImapAdapter {
+    constructor(accountId: string, config: ImapConfig) {
+        // Proton Bridge defaults
+        const protonConfig: ImapConfig = {
+            ...config,
+            host: config.host || '127.0.0.1',
+            port: config.port || 1143,
+            tls: false, // Proton Bridge uses STARTTLS
+        };
+        super('proton', accountId, protonConfig);
+    }
+}
+
+/**
+ * Hover Mail adapter - standard IMAP
+ */
+export class HoverAdapter extends ImapAdapter {
+    constructor(accountId: string, config: ImapConfig) {
+        const hoverConfig: ImapConfig = {
+            ...config,
+            host: config.host || 'mail.hover.com',
+            port: config.port || 993,
+            tls: true,
+        };
+        super('hover', accountId, hoverConfig);
+    }
+}
