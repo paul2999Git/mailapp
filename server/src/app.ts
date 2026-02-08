@@ -14,6 +14,7 @@ import rateLimit from 'express-rate-limit';
 import passport from 'passport';
 
 import { errorHandler } from './middleware/errorHandler';
+import { requireAuth } from './middleware/auth.middleware';
 import { configurePassport } from './lib/passport';
 
 // Routes
@@ -62,15 +63,20 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// API routes
+// Public API routes (no auth required)
 app.use('/api/auth', authRoutes);
+app.use('/api/oauth', oauthRoutes);
+
+// All remaining /api routes require authentication
+app.use('/api', requireAuth);
+
+// Protected API routes
 app.use('/api/accounts', accountRoutes);
 app.use('/api/messages', messagesRoutes);
 app.use('/api/threads', threadsRoutes);
 app.use('/api/folders', foldersRoutes);
 app.use('/api/classification', classificationRoutes);
 app.use('/api/search', searchRoutes);
-app.use('/api/oauth', oauthRoutes);
 
 // Error handling
 app.use(errorHandler);

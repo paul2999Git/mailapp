@@ -82,7 +82,7 @@ export async function processClassificationJob(job: Job<ClassificationJobData>) 
             messageId: message.id,
             confidence: result.confidence,
             explanation: result.explanation,
-            reasoningFactors: result.factors,
+            reasoningFactors: result.factors as unknown as import('@prisma/client').Prisma.InputJsonValue,
             aiModel: userSettings.aiProvider || 'gemini',
             promptVersion: '1.0',
             usedBodyContent: !!input.bodyPreview,
