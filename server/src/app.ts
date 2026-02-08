@@ -1,6 +1,10 @@
 // Load environment FIRST before any other imports
 import dotenv from 'dotenv';
-dotenv.config({ path: process.env.NODE_ENV === 'production' ? '.env.prod' : '.env.dev' });
+import path from 'path';
+
+const envFile = process.env.NODE_ENV === 'production' ? '.env.prod' : '.env.dev';
+// Go up from server/src to project root
+dotenv.config({ path: path.resolve(__dirname, '../../..', envFile) });
 
 import express from 'express';
 import cors from 'cors';
