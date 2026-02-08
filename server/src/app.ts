@@ -1,3 +1,7 @@
+// Load environment FIRST before any other imports
+import dotenv from 'dotenv';
+dotenv.config({ path: process.env.NODE_ENV === 'production' ? '.env.prod' : '.env.dev' });
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
