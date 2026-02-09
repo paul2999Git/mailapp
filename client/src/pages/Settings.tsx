@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { apiRequest } from '../api/client';
 import type { AIProviderType } from '@mailhub/shared';
 
 export default function Settings() {
@@ -15,6 +17,19 @@ export default function Settings() {
 
     const handleBodyPreviewChange = async (chars: number) => {
         await updateSettings({ bodyPreviewChars: chars });
+    };
+
+    const [addingAccount, setAddingAccount] = useState(false);
+
+    const handleAddAccount = async () => {
+        if (!user) return;
+        setAddingAccount(true);
+        try {
+            const { url } = await apiRequest<{ url: string }>('GET', `/oauth/google/url?userId=${user.id}`);
+            window.location.href = url;
+        } catch {
+            setAddingAccount(false);
+        }
     };
 
     return (
@@ -82,9 +97,12 @@ export default function Settings() {
 
                 <div className="card" style={{ marginBottom: 'var(--space-6)' }}>
                     <h3 style={{ marginBottom: 'var(--space-5)' }}>Email Accounts</h3>
-                    <p className="text-muted">Account management coming soon...</p>
-                    <button className="btn btn-primary" style={{ marginTop: 'var(--space-4)' }}>
-                        + Add Account
+                    <button
+                        className="btn btn-primary"
+                        onClick={handleAddAccount}
+                        disabled={addingAccount}
+                    >
+                        {addingAccount ? 'Redirecting...' : '+ Add Account'}
                     </button>
                 </div>
 
