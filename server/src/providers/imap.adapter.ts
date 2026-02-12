@@ -103,15 +103,45 @@ export class ImapAdapter implements IProviderAdapter {
         const messages: NormalizedMessage[] = [];
         const targetFolder = folderId || 'INBOX';
 
+        // Check mailbox status BEFORE locking to detect UIDVALIDITY changes
+        const status = await client.status(targetFolder, {
+            uidNext: true,
+            uidValidity: true,
+            messages: true,
+        });
+
         const lock = await client.getMailboxLock(targetFolder);
 
         try {
-            // Parse cursor as UID for incremental sync
-            const sinceUid = cursor ? parseInt(cursor, 10) : 1;
+            // Parse cursor - format is "uidvalidity:uid" or legacy plain UID
+            let savedValidity: number | null = null;
+            let sinceUid = 1;
 
-            // Fetch messages since cursor AND since date
-            const searchCriteria: any = {};
             if (cursor) {
+                const parts = cursor.split(':');
+                if (parts.length === 2) {
+                    savedValidity = parseInt(parts[0], 10);
+                    sinceUid = parseInt(parts[1], 10);
+                } else {
+                    sinceUid = parseInt(cursor, 10);
+                }
+            }
+
+            // Reset cursor if UIDVALIDITY changed or cursor is ahead of uidNext
+            const currentValidity = Number(status.uidValidity);
+            const uidNext = Number(status.uidNext) || 1;
+
+            if (savedValidity && currentValidity && savedValidity !== currentValidity) {
+                console.log(`⚠️ UIDVALIDITY changed for ${targetFolder}: ${savedValidity} → ${currentValidity}. Resetting cursor.`);
+                sinceUid = 1;
+            } else if (sinceUid > uidNext) {
+                console.log(`⚠️ Cursor (${sinceUid}) ahead of uidNext (${uidNext}) for ${targetFolder}. Resetting cursor.`);
+                sinceUid = 1;
+            }
+
+            // Build search criteria
+            const searchCriteria: any = {};
+            if (sinceUid > 1) {
                 searchCriteria.uid = `${sinceUid}:*`;
             } else if (!since) {
                 searchCriteria.all = true;
@@ -122,8 +152,8 @@ export class ImapAdapter implements IProviderAdapter {
             }
 
             let count = 0;
-            const maxMessages = 100; // Limit per sync
-            let lastUid = sinceUid;
+            const maxMessages = 200;
+            let lastUid = sinceUid > 1 ? sinceUid : 0;
 
             for await (const msg of client.fetch(searchCriteria, {
                 uid: true,
@@ -137,7 +167,6 @@ export class ImapAdapter implements IProviderAdapter {
 
                 const parsed = await simpleParser(msg.source);
                 const normalized = this.normalizeMessage(msg, parsed);
-                // Set folderId so we can map it to local database folder
                 normalized.folderId = targetFolder;
 
                 messages.push(normalized);
@@ -145,10 +174,16 @@ export class ImapAdapter implements IProviderAdapter {
                 count++;
             }
 
+            // Build new cursor with UIDVALIDITY prefix
+            const newCursorUid = lastUid > 0 ? lastUid + 1 : 1;
+            const newCursor = currentValidity
+                ? `${currentValidity}:${newCursorUid}`
+                : String(newCursorUid);
+
             return {
                 messages,
                 folders: [],
-                newCursor: String(lastUid + 1),
+                newCursor,
                 hasMore: count === maxMessages,
                 stats: {
                     messagesProcessed: count,

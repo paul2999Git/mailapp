@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Trash2, RefreshCw, Loader2 } from 'lucide-react';
+import { Trash2, RefreshCw, Loader2, Pencil, Plus, X, Check } from 'lucide-react';
 import { apiRequest } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { Toast } from '../components/Toast';
@@ -91,6 +91,28 @@ export default function Settings() {
             refetchRules();
         }
     });
+
+    const createRuleMutation = useMutation({
+        mutationFn: (data: any) => apiRequest('POST', '/classification/rules', data),
+        onSuccess: () => {
+            refetchRules();
+            setShowCreateRule(false);
+            setNewRule({ matchType: 'sender_email', matchValue: '', targetCategoryId: '', targetFolderId: '' });
+        }
+    });
+
+    const updateRuleMutation = useMutation({
+        mutationFn: ({ id, ...data }: any) => apiRequest('PUT', `/classification/rules/${id}`, data),
+        onSuccess: () => {
+            refetchRules();
+            setEditingRuleId(null);
+        }
+    });
+
+    const [showCreateRule, setShowCreateRule] = useState(false);
+    const [newRule, setNewRule] = useState({ matchType: 'sender_email', matchValue: '', targetCategoryId: '', targetFolderId: '' });
+    const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+    const [editingRule, setEditingRule] = useState<any>({});
 
     const { data: stats, refetch: refetchStats } = useQuery({
         queryKey: ['classification-stats'],
@@ -192,6 +214,11 @@ Respond exactly in this JSON format:
     const { data: accounts, refetch: refetchAccounts } = useQuery({
         queryKey: ['accounts'],
         queryFn: () => apiRequest<any[]>('GET', '/accounts'),
+    });
+
+    const { data: folders } = useQuery({
+        queryKey: ['folders'],
+        queryFn: () => apiRequest<any[]>('GET', '/folders'),
     });
 
     const handleAddAccountGoogle = async () => {
@@ -548,30 +575,198 @@ Respond exactly in this JSON format:
                 </div>
 
                 <div className="card">
-                    <h3 style={{ marginBottom: 'var(--space-5)' }}>Learned Rules</h3>
-                    <p className="text-sm text-muted" style={{ marginBottom: 'var(--space-4)' }}>
-                        Automatic routing rules based on your training.
-                    </p>
+                    <div className="flex justify-between items-center" style={{ marginBottom: 'var(--space-5)' }}>
+                        <div>
+                            <h3 style={{ margin: 0 }}>Routing Rules</h3>
+                            <p className="text-sm text-muted" style={{ marginTop: 'var(--space-1)' }}>
+                                Route emails by sender or domain to categories and folders.
+                            </p>
+                        </div>
+                        <button
+                            className="btn btn-primary btn-sm"
+                            onClick={() => setShowCreateRule(!showCreateRule)}
+                        >
+                            {showCreateRule ? <><X size={14} /> Cancel</> : <><Plus size={14} /> Add Rule</>}
+                        </button>
+                    </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                        {rules?.length === 0 && <div className="text-muted text-sm">No learned rules yet. Categorize some emails to train the AI!</div>}
-                        {rules?.map(rule => (
-                            <div key={rule.id} className="card flex justify-between items-center" style={{ padding: 'var(--space-2) var(--space-4)', background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)' }}>
-                                <div style={{ fontSize: 'var(--font-size-sm)' }}>
-                                    <span className="text-muted">{rule.matchType === 'sender_domain' ? 'Domain' : 'Sender'}: </span>
-                                    <span style={{ fontWeight: 500 }}>{rule.matchValue}</span>
-                                    <span className="text-muted"> → </span>
-                                    <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>{rule.targetCategory?.name || 'Category Deleted'}</span>
-                                </div>
-                                <button
-                                    className="btn btn-ghost btn-sm"
-                                    style={{ color: 'var(--color-danger)' }}
-                                    onClick={() => deleteRuleMutation.mutate(rule.id)}
-                                    title="Delete rule"
+                    {showCreateRule && (
+                        <div style={{ marginBottom: 'var(--space-4)', padding: 'var(--space-4)', background: 'var(--color-bg-tertiary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 'var(--space-3)', alignItems: 'center' }}>
+                                <label className="form-label" style={{ margin: 0 }}>Match Type</label>
+                                <select
+                                    className="form-input"
+                                    value={newRule.matchType}
+                                    onChange={e => setNewRule({ ...newRule, matchType: e.target.value })}
                                 >
-                                    <Trash2 size={14} />
+                                    <option value="sender_email">Sender Email</option>
+                                    <option value="sender_domain">Sender Domain</option>
+                                </select>
+
+                                <label className="form-label" style={{ margin: 0 }}>
+                                    {newRule.matchType === 'sender_domain' ? 'Domain' : 'Email Address'}
+                                </label>
+                                <input
+                                    type="text"
+                                    className="form-input"
+                                    placeholder={newRule.matchType === 'sender_domain' ? 'example.com' : 'user@example.com'}
+                                    value={newRule.matchValue}
+                                    onChange={e => setNewRule({ ...newRule, matchValue: e.target.value })}
+                                />
+
+                                <label className="form-label" style={{ margin: 0 }}>Category</label>
+                                <select
+                                    className="form-input"
+                                    value={newRule.targetCategoryId}
+                                    onChange={e => setNewRule({ ...newRule, targetCategoryId: e.target.value })}
+                                >
+                                    <option value="">-- None --</option>
+                                    {categories?.map(cat => (
+                                        <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                    ))}
+                                </select>
+
+                                <label className="form-label" style={{ margin: 0 }}>Folder</label>
+                                <select
+                                    className="form-input"
+                                    value={newRule.targetFolderId}
+                                    onChange={e => setNewRule({ ...newRule, targetFolderId: e.target.value })}
+                                >
+                                    <option value="">-- None --</option>
+                                    {folders?.map((f: any) => (
+                                        <option key={f.id} value={f.id}>
+                                            {f.account?.emailAddress ? `${f.name} (${f.account.emailAddress})` : f.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="flex gap-2" style={{ marginTop: 'var(--space-4)', justifyContent: 'flex-end' }}>
+                                <button
+                                    className="btn btn-primary btn-sm"
+                                    disabled={!newRule.matchValue.trim() || (!newRule.targetCategoryId && !newRule.targetFolderId) || createRuleMutation.isPending}
+                                    onClick={() => createRuleMutation.mutate({
+                                        matchType: newRule.matchType,
+                                        matchValue: newRule.matchValue,
+                                        targetCategoryId: newRule.targetCategoryId || undefined,
+                                        targetFolderId: newRule.targetFolderId || undefined,
+                                    })}
+                                >
+                                    {createRuleMutation.isPending ? 'Creating...' : 'Create Rule'}
                                 </button>
                             </div>
+                            {createRuleMutation.isError && (
+                                <div className="text-sm" style={{ color: 'var(--color-danger)', marginTop: 'var(--space-2)' }}>
+                                    Failed to create rule. Check that the values are valid.
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                        {rules?.length === 0 && !showCreateRule && (
+                            <div className="text-muted text-sm">No routing rules yet. Click "Add Rule" or categorize emails to create rules automatically.</div>
+                        )}
+                        {rules?.map(rule => (
+                            editingRuleId === rule.id ? (
+                                <div key={rule.id} style={{ padding: 'var(--space-3) var(--space-4)', background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-primary)', borderRadius: 'var(--radius-md)' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: 'var(--space-2)', alignItems: 'center', fontSize: 'var(--font-size-sm)' }}>
+                                        <span className="text-muted">{rule.matchType === 'sender_domain' ? 'Domain' : 'Sender'}:</span>
+                                        <span style={{ fontWeight: 500 }}>{rule.matchValue}</span>
+
+                                        <label className="text-muted">Category</label>
+                                        <select
+                                            className="form-input"
+                                            style={{ padding: '4px 8px', fontSize: 'var(--font-size-sm)' }}
+                                            value={editingRule.targetCategoryId || ''}
+                                            onChange={e => setEditingRule({ ...editingRule, targetCategoryId: e.target.value })}
+                                        >
+                                            <option value="">-- None --</option>
+                                            {categories?.map(cat => (
+                                                <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                            ))}
+                                        </select>
+
+                                        <label className="text-muted">Folder</label>
+                                        <select
+                                            className="form-input"
+                                            style={{ padding: '4px 8px', fontSize: 'var(--font-size-sm)' }}
+                                            value={editingRule.targetFolderId || ''}
+                                            onChange={e => setEditingRule({ ...editingRule, targetFolderId: e.target.value })}
+                                        >
+                                            <option value="">-- None --</option>
+                                            {folders?.map((f: any) => (
+                                                <option key={f.id} value={f.id}>
+                                                    {f.account?.emailAddress ? `${f.name} (${f.account.emailAddress})` : f.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="flex gap-2" style={{ marginTop: 'var(--space-3)', justifyContent: 'flex-end' }}>
+                                        <button className="btn btn-ghost btn-sm" onClick={() => setEditingRuleId(null)}>
+                                            <X size={14} /> Cancel
+                                        </button>
+                                        <button
+                                            className="btn btn-primary btn-sm"
+                                            disabled={updateRuleMutation.isPending}
+                                            onClick={() => updateRuleMutation.mutate({
+                                                id: rule.id,
+                                                targetCategoryId: editingRule.targetCategoryId || undefined,
+                                                targetFolderId: editingRule.targetFolderId || undefined,
+                                            })}
+                                        >
+                                            <Check size={14} /> {updateRuleMutation.isPending ? 'Saving...' : 'Save'}
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div key={rule.id} className="card flex justify-between items-center" style={{ padding: 'var(--space-2) var(--space-4)', background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)' }}>
+                                    <div style={{ fontSize: 'var(--font-size-sm)' }}>
+                                        <span className="text-muted">{rule.matchType === 'sender_domain' ? 'Domain' : 'Sender'}: </span>
+                                        <span style={{ fontWeight: 500 }}>{rule.matchValue}</span>
+                                        <span className="text-muted"> → </span>
+                                        {rule.targetCategory && (
+                                            <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>{rule.targetCategory.name}</span>
+                                        )}
+                                        {rule.targetCategory && rule.targetFolder && (
+                                            <span className="text-muted"> + </span>
+                                        )}
+                                        {rule.targetFolder && (
+                                            <span style={{ fontWeight: 500 }}>{rule.targetFolder.name}</span>
+                                        )}
+                                        {!rule.targetCategory && !rule.targetFolder && (
+                                            <span className="text-muted">No target set</span>
+                                        )}
+                                        {rule.timesApplied > 0 && (
+                                            <span className="text-muted" style={{ marginLeft: 8, fontSize: '11px' }}>
+                                                ({rule.timesApplied}x applied)
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="flex gap-1">
+                                        <button
+                                            className="btn btn-ghost btn-sm"
+                                            onClick={() => {
+                                                setEditingRuleId(rule.id);
+                                                setEditingRule({
+                                                    targetCategoryId: rule.targetCategoryId || '',
+                                                    targetFolderId: rule.targetFolderId || '',
+                                                });
+                                            }}
+                                            title="Edit rule"
+                                        >
+                                            <Pencil size={14} />
+                                        </button>
+                                        <button
+                                            className="btn btn-ghost btn-sm"
+                                            style={{ color: 'var(--color-danger)' }}
+                                            onClick={() => deleteRuleMutation.mutate(rule.id)}
+                                            title="Delete rule"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
+                                </div>
+                            )
                         ))}
                     </div>
                 </div>

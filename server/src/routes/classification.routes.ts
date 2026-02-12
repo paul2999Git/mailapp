@@ -197,6 +197,8 @@ router.get('/rules', async (req: Request, res: Response, next: NextFunction) => 
             where: { userId: authReq.user!.id },
             include: {
                 targetCategory: true,
+                targetFolder: { select: { id: true, name: true, accountId: true } },
+                account: { select: { id: true, emailAddress: true } },
             },
             orderBy: { priority: 'desc' },
         });
@@ -205,6 +207,119 @@ router.get('/rules', async (req: Request, res: Response, next: NextFunction) => 
             success: true,
             data: rules,
         });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// POST /api/classification/rules - Create a manual routing rule
+router.post('/rules', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const userId = authReq.user!.id;
+        const { matchType, matchValue, targetCategoryId, targetFolderId, accountId, action, priority } = req.body;
+
+        if (!matchType || !matchValue) {
+            throw errors.badRequest('matchType and matchValue are required');
+        }
+        if (!targetCategoryId && !targetFolderId) {
+            throw errors.badRequest('At least one of targetCategoryId or targetFolderId is required');
+        }
+
+        // Validate category ownership if provided
+        if (targetCategoryId) {
+            const cat = await prisma.category.findFirst({ where: { id: targetCategoryId, userId } });
+            if (!cat) throw errors.notFound('Category');
+        }
+
+        // Validate folder ownership if provided
+        if (targetFolderId) {
+            const folder = await prisma.folder.findFirst({ where: { id: targetFolderId, account: { userId } } });
+            if (!folder) throw errors.notFound('Folder');
+        }
+
+        // Validate account ownership if provided
+        if (accountId) {
+            const acc = await prisma.account.findFirst({ where: { id: accountId, userId } });
+            if (!acc) throw errors.notFound('Account');
+        }
+
+        const rule = await prisma.learnedRule.upsert({
+            where: {
+                userId_matchType_matchValue: { userId, matchType, matchValue },
+            },
+            create: {
+                userId,
+                matchType,
+                matchValue: matchValue.toLowerCase().trim(),
+                targetCategoryId: targetCategoryId || null,
+                targetFolderId: targetFolderId || null,
+                accountId: accountId || null,
+                action: action || 'route',
+                priority: priority || 50,
+            },
+            update: {
+                targetCategoryId: targetCategoryId || null,
+                targetFolderId: targetFolderId || null,
+                accountId: accountId || null,
+                action: action || 'route',
+                priority: priority ?? 50,
+            },
+            include: {
+                targetCategory: true,
+                targetFolder: { select: { id: true, name: true, accountId: true } },
+                account: { select: { id: true, emailAddress: true } },
+            },
+        });
+
+        res.status(201).json({ success: true, data: rule });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// PUT /api/classification/rules/:id - Update a routing rule
+router.put('/rules/:id', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const userId = authReq.user!.id;
+        const { targetCategoryId, targetFolderId, accountId, action, priority } = req.body;
+
+        // Verify rule ownership
+        const existing = await prisma.learnedRule.findFirst({
+            where: { id: req.params.id, userId },
+        });
+        if (!existing) throw errors.notFound('Rule');
+
+        // Validate category if provided
+        if (targetCategoryId) {
+            const cat = await prisma.category.findFirst({ where: { id: targetCategoryId, userId } });
+            if (!cat) throw errors.notFound('Category');
+        }
+
+        // Validate folder if provided
+        if (targetFolderId) {
+            const folder = await prisma.folder.findFirst({ where: { id: targetFolderId, account: { userId } } });
+            if (!folder) throw errors.notFound('Folder');
+        }
+
+        const rule = await prisma.learnedRule.update({
+            where: { id: req.params.id },
+            data: {
+                targetCategoryId: targetCategoryId !== undefined ? (targetCategoryId || null) : undefined,
+                targetFolderId: targetFolderId !== undefined ? (targetFolderId || null) : undefined,
+                accountId: accountId !== undefined ? (accountId || null) : undefined,
+                action: action || undefined,
+                priority: priority !== undefined ? priority : undefined,
+            },
+            include: {
+                targetCategory: true,
+                targetFolder: { select: { id: true, name: true, accountId: true } },
+                account: { select: { id: true, emailAddress: true } },
+            },
+        });
+
+        res.json({ success: true, data: rule });
     } catch (error) {
         next(error);
     }
