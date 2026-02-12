@@ -33,6 +33,7 @@ function App() {
                 <Route path="/" element={<Navigate to="/inbox" replace />} />
                 <Route path="/inbox" element={<Inbox />} />
                 <Route path="/inbox/:category" element={<Inbox />} />
+                <Route path="/inbox/folder/:folderId" element={<Inbox />} />
                 <Route path="/account/:accountId" element={<Inbox />} />
                 <Route path="/thread/:threadId" element={<Thread />} />
                 <Route path="/settings" element={<Settings />} />

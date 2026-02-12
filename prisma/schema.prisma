@@ -41,6 +41,7 @@ enum ProviderType {
   proton
   hover
   zoho
+  imap
 }
 
 model Account {
@@ -69,13 +70,16 @@ model Account {
   backfillTargetDate     DateTime?    @map("backfill_target_date") @db.Date
   isEnabled              Boolean      @default(true) @map("is_enabled")
   
-  createdAt              DateTime     @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt              DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+  syncSettings          Json         @default("{}") @map("sync_settings")
+  createdAt             DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime     @updatedAt @map("updated_at") @db.Timestamptz
 
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   folders   Folder[]
   messages  Message[]
   syncJobs  SyncJob[]
+
+  learnedRules  LearnedRule[]
 
   @@unique([userId, emailAddress])
   @@index([userId])
@@ -102,8 +106,9 @@ model Folder {
   updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  messages  Message[]
+  messages      Message[]
   userOverrides UserOverride[]
+  learnedRules  LearnedRule[]
 
   @@unique([accountId, providerFolderId])
   @@index([accountId])
@@ -292,10 +297,12 @@ model UserOverride {
 model LearnedRule {
   id               String    @id @default(uuid()) @db.Uuid
   userId           String    @map("user_id") @db.Uuid
+  accountId        String?   @map("account_id") @db.Uuid
   matchType        String    @map("match_type") @db.VarChar(20)
   matchValue       String    @map("match_value") @db.VarChar(255)
   targetCategoryId String?   @map("target_category_id") @db.Uuid
-  action           String    @db.VarChar(50)
+  targetFolderId   String?   @map("target_folder_id") @db.Uuid
+  action           String    @db.VarChar(50) @default("route")
   priority         Int       @default(50)
   confidenceBoost  Decimal   @default(0.2) @map("confidence_boost") @db.Decimal(5, 4)
   timesApplied     Int       @default(0) @map("times_applied")
@@ -303,7 +310,9 @@ model LearnedRule {
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
   user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account        Account?  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   targetCategory Category? @relation(fields: [targetCategoryId], references: [id])
+  targetFolder   Folder?   @relation(fields: [targetFolderId], references: [id])
 
   @@unique([userId, matchType, matchValue])
   @@index([userId])

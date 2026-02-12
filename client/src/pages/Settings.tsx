@@ -1,7 +1,10 @@
-import { useState } from 'react';
-import { useAuth } from '../hooks/useAuth';
+import { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Trash2, RefreshCw, Loader2 } from 'lucide-react';
 import { apiRequest } from '../api/client';
-import type { AIProviderType } from '@mailhub/shared';
+import { useAuth } from '../hooks/useAuth';
+import { Toast } from '../components/Toast';
+import type { ICategory, AIProviderType } from '@mailhub/shared';
 
 export default function Settings() {
     const { user, updateSettings } = useAuth();
@@ -19,17 +22,232 @@ export default function Settings() {
         await updateSettings({ bodyPreviewChars: chars });
     };
 
-    const [addingAccount, setAddingAccount] = useState(false);
+    const [prompt, setPrompt] = useState(settings?.classificationPrompt || '');
+    const [newCatName, setNewCatName] = useState('');
+    const [isCreatingCat, setIsCreatingCat] = useState(false);
 
-    const handleAddAccount = async () => {
+    const queryClient = useQueryClient();
+
+    const { data: categories, refetch: refetchCategories } = useQuery({
+        queryKey: ['categories'],
+        queryFn: () => apiRequest<ICategory[]>('GET', '/classification/categories'),
+    });
+
+    const deleteCategoryMutation = useMutation({
+        mutationFn: (id: string) => apiRequest('DELETE', `/classification/categories/${id}`),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['categories'] });
+        },
+    });
+
+    const [confirmToast, setConfirmToast] = useState<{
+        open: boolean;
+        title: string;
+        description: string;
+        actionLabel: string;
+        onConfirm: () => void;
+    }>({
+        open: false,
+        title: '',
+        description: '',
+        actionLabel: '',
+        onConfirm: () => { },
+    });
+
+    const handleDeleteCategory = (cat: ICategory) => {
+        setConfirmToast({
+            open: true,
+            title: 'Delete Category',
+            description: `Are you sure you want to delete the "${cat.name}" category? The AI will no longer use it for classification.`,
+            actionLabel: 'Delete',
+            onConfirm: () => {
+                deleteCategoryMutation.mutate(cat.id);
+                setConfirmToast(prev => ({ ...prev, open: false }));
+            }
+        });
+    };
+
+    const bulkClassifyMutation = useMutation({
+        mutationFn: () => apiRequest('POST', '/classification/bulk-classify'),
+        onSuccess: (data: any) => {
+            setConfirmToast({
+                open: true,
+                title: 'Classification Started',
+                description: `Successfully queued ${data.queued} messages for AI classification. This may take a few minutes.`,
+                actionLabel: 'OK',
+                onConfirm: () => setConfirmToast(prev => ({ ...prev, open: false }))
+            });
+        }
+    });
+
+    const { data: rules, refetch: refetchRules } = useQuery({
+        queryKey: ['rules'],
+        queryFn: () => apiRequest<any[]>('GET', '/classification/rules'),
+    });
+
+    const deleteRuleMutation = useMutation({
+        mutationFn: (id: string) => apiRequest('DELETE', `/classification/rules/${id}`),
+        onSuccess: () => {
+            refetchRules();
+        }
+    });
+
+    const { data: stats, refetch: refetchStats } = useQuery({
+        queryKey: ['classification-stats'],
+        queryFn: () => apiRequest<any>('GET', '/classification/stats'),
+        refetchInterval: (query) => {
+            const data = query.state.data;
+            if (data?.queue && (data.queue.waiting > 0 || data.queue.active > 0)) {
+                return 1500; // Poll every 1.5s while active
+            }
+            return 10000; // Poll every 10s otherwise to check for background tasks
+        }
+    });
+
+    // Track when classification finishes to show a "Done" signal
+    const [justFinished, setJustFinished] = useState(false);
+    const [prevQueueCount, setPrevQueueCount] = useState(0);
+
+    useEffect(() => {
+        if (stats?.queue) {
+            const currentCount = stats.queue.waiting + stats.queue.active;
+            if (prevQueueCount > 0 && currentCount === 0) {
+                setJustFinished(true);
+                queryClient.invalidateQueries({ queryKey: ['messages'] });
+                setTimeout(() => setJustFinished(false), 5000);
+            }
+            setPrevQueueCount(currentCount);
+        }
+    }, [stats, prevQueueCount, queryClient]);
+
+    const resetQueueMutation = useMutation({
+        mutationFn: () => apiRequest('POST', '/classification/reset-queue'),
+        onSuccess: () => {
+            refetchStats();
+        }
+    });
+
+    const handleCreateCategory = async () => {
+        if (!newCatName.trim()) return;
+        setIsCreatingCat(true);
+        try {
+            await apiRequest('POST', '/classification/categories', { name: newCatName });
+            setNewCatName('');
+            await refetchCategories();
+        } finally {
+            setIsCreatingCat(false);
+        }
+    };
+
+    const handlePromptSave = async () => {
+        await updateSettings({ classificationPrompt: prompt });
+    };
+
+    const handlePromptReset = async () => {
+        const defaultPrompt = `
+You are an expert email triage assistant. Your task is to classify an incoming email into exactly one of the provided categories.
+
+AVAILABLE CATEGORIES:
+{{categories}}
+
+EMAIL DATA:
+From: {{from}}
+Subject: {{subject}}
+Date: {{date}}
+Body Preview: {{body}}
+Attachment Types: {{attachments}}
+Is Reply: {{isReply}}
+
+ANALYSIS INSTRUCTIONS:
+1. Carefully analyze the sender, subject, and body.
+2. Consider the tone and purpose of the email.
+3. Choose the most appropriate category ID from the list above.
+4. If you are uncertain (confidence < 0.7), flag it for human review.
+
+RESPONSE FORMAT:
+Respond exactly in this JSON format:
+{
+  "categoryId": "the-id-of-the-category",
+  "confidence": 0.95,
+  "explanation": "Brief explanation of why this category was chosen",
+  "factors": ["list of key words or patterns identified"],
+  "suggestedAction": "inbox"
+}
+`.trim();
+        setPrompt(defaultPrompt);
+        await updateSettings({ classificationPrompt: defaultPrompt });
+    };
+
+    const [addingAccount, setAddingAccount] = useState(false);
+    const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
+    const [imapDetails, setImapDetails] = useState({
+        emailAddress: '',
+        imapHost: '',
+        imapPort: 993,
+        imapUsername: '',
+        imapPassword: '',
+        provider: 'imap'
+    });
+
+    const { data: accounts, refetch: refetchAccounts } = useQuery({
+        queryKey: ['accounts'],
+        queryFn: () => apiRequest<any[]>('GET', '/accounts'),
+    });
+
+    const handleAddAccountGoogle = async () => {
         if (!user) return;
         setAddingAccount(true);
         try {
             const { url } = await apiRequest<{ url: string }>('GET', `/oauth/google/url?userId=${user.id}`);
             window.location.href = url;
         } catch {
+            setAddingAccount(true); // Keep state or show error
+        }
+    };
+
+    const handleAddAccountZoho = async () => {
+        if (!user) return;
+        setAddingAccount(true);
+        try {
+            const { url } = await apiRequest<{ url: string }>('GET', `/oauth/zoho/url?userId=${user.id}`);
+            window.location.href = url;
+        } catch {
+            setAddingAccount(true);
+        }
+    };
+
+    const handleAddAccountImap = async () => {
+        setAddingAccount(true);
+        try {
+            await apiRequest('POST', '/accounts', imapDetails);
+            setSelectedProvider(null);
+            await refetchAccounts();
+        } catch (err) {
+            console.error(err);
+        } finally {
             setAddingAccount(false);
         }
+    };
+
+    const handleDisconnect = async (id: string) => {
+        if (!confirm('Are you sure you want to disconnect this account? All messages will be localy deleted.')) return;
+        await apiRequest('DELETE', `/accounts/${id}`);
+        await refetchAccounts();
+    };
+
+    const handleSyncNow = async (id: string) => {
+        try {
+            await apiRequest('POST', `/accounts/${id}/sync`);
+            await refetchAccounts();
+        } catch (error: any) {
+            const message = error.response?.data?.error?.message || error.message || 'Sync failed';
+            alert(`Sync Failed: ${message}`);
+        }
+    };
+
+
+    const handleAiModelChange = async (model: string) => {
+        await updateSettings({ aiModel: model });
     };
 
     return (
@@ -38,11 +256,11 @@ export default function Settings() {
                 <h2 style={{ margin: 0, fontSize: 'var(--font-size-lg)' }}>Settings</h2>
             </header>
 
-            <div style={{ padding: 'var(--space-6)', maxWidth: 800 }}>
+            <div style={{ padding: 'var(--space-6)', width: '100%', maxWidth: '1400px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
                 <div className="card" style={{ marginBottom: 'var(--space-6)' }}>
                     <h3 style={{ marginBottom: 'var(--space-5)' }}>AI Classification</h3>
 
-                    <div className="form-group">
+                    <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>
                         <label className="form-label">AI Provider</label>
                         <div className="flex gap-2">
                             {(['gemini', 'claude', 'openai'] as AIProviderType[]).map((provider) => (
@@ -56,6 +274,28 @@ export default function Settings() {
                             ))}
                         </div>
                     </div>
+
+                    {settings?.aiProvider === 'gemini' && (
+                        <div className="form-group" style={{ marginBottom: '--space-4' }}>
+                            <label className="form-label">Gemini Model</label>
+                            <div className="flex gap-2 flex-wrap">
+                                {[
+                                    { id: 'gemini-flash-latest', name: 'Flash (Fastest)' },
+                                ].map((model) => (
+                                    <button
+                                        key={model.id}
+                                        className={`btn btn-sm ${settings?.aiModel === model.id ? 'btn-primary' : 'btn-secondary'}`}
+                                        onClick={() => handleAiModelChange(model.id)}
+                                    >
+                                        {model.name}
+                                    </button>
+                                ))}
+                            </div>
+                            <p className="text-xs text-muted" style={{ marginTop: 'var(--space-1)' }}>
+                                Note: Restricted to Flash Latest for stability.
+                            </p>
+                        </div>
+                    )}
 
                     <div className="form-group">
                         <label className="form-label">Classification Aggressiveness</label>
@@ -75,7 +315,7 @@ export default function Settings() {
                         </div>
                     </div>
 
-                    <div className="form-group" style={{ marginBottom: 0 }}>
+                    <div className="form-group" style={{ marginBottom: 'var(--space-6)' }}>
                         <label className="form-label">Body Preview Characters</label>
                         <p className="text-sm text-muted" style={{ marginBottom: 'var(--space-3)' }}>
                             Number of email body characters sent to AI for classification (not used for Proton Mail)
@@ -93,24 +333,261 @@ export default function Settings() {
                             <option value={1000}>1000 characters</option>
                         </select>
                     </div>
+
+                    <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-5)' }}>
+                        <h4 style={{ marginBottom: 'var(--space-3)' }}>Maintenance</h4>
+
+                        {((stats && (stats.queue.waiting > 0 || stats.queue.active > 0)) || justFinished) && (
+                            <div style={{ marginBottom: 'var(--space-5)', background: 'var(--color-bg-tertiary)', padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+                                <div className="flex justify-between items-center" style={{ marginBottom: 'var(--space-2)' }}>
+                                    <span style={{ fontWeight: 500, fontSize: 'var(--font-size-sm)', display: 'flex', alignItems: 'center' }}>
+                                        {justFinished ? (
+                                            <span style={{ color: 'var(--color-success)' }}>✅ Classification Complete!</span>
+                                        ) : (
+                                            <>
+                                                <Loader2 size={14} className="animate-spin" style={{ marginRight: 8 }} />
+                                                Classification Progress
+                                            </>
+                                        )}
+                                    </span>
+                                    <span className="text-sm text-muted">{stats.classified} / {stats.total} classified</span>
+                                </div>
+                                <div style={{ height: 8, background: 'var(--color-bg-primary)', borderRadius: 4, overflow: 'hidden' }}>
+                                    <div style={{
+                                        height: '100%',
+                                        background: justFinished ? 'var(--color-success)' : 'var(--color-primary)',
+                                        width: `${(stats.classified / stats.total) * 100}%`,
+                                        transition: 'width 0.5s ease-out'
+                                    }} />
+                                </div>
+                                {!justFinished && (
+                                    <div className="text-xs text-muted" style={{ marginTop: 'var(--space-2)' }}>
+                                        {stats.queue.waiting} waiting, {stats.queue.active} currently processing...
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="flex items-center justify-between" style={{ marginBottom: 'var(--space-4)' }}>
+                            <div>
+                                <div style={{ fontWeight: 500 }}>Bulk Classify</div>
+                                <div className="text-sm text-muted">Process all existing unclassified messages through the AI.</div>
+                            </div>
+                            <div className="flex gap-2">
+                                {stats?.queue.failed > 0 && (
+                                    <button
+                                        className="btn btn-ghost btn-sm"
+                                        style={{ color: 'var(--color-danger)' }}
+                                        onClick={() => resetQueueMutation.mutate()}
+                                        title="Clear failed jobs"
+                                    >
+                                        <RefreshCw size={14} style={{ marginRight: 4 }} />
+                                        Retry Failed ({stats.queue.failed})
+                                    </button>
+                                )}
+                                <button
+                                    className="btn btn-secondary"
+                                    onClick={() => bulkClassifyMutation.mutate()}
+                                    disabled={bulkClassifyMutation.isPending || (stats?.queue.waiting > 0 || stats?.queue.active > 0)}
+                                >
+                                    {bulkClassifyMutation.isPending ? 'Queuing...' : 'Run Now'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
+                <div className="card">
+                    <h3 style={{ marginBottom: 'var(--space-5)' }}>Email Training (Prompt)</h3>
+                    <p className="text-sm text-muted" style={{ marginBottom: 'var(--space-3)' }}>
+                        Customize instructions given to Gemini for email classification.
+                    </p>
+                    <textarea
+                        className="form-input"
+                        rows={8}
+                        style={{ fontFamily: 'monospace', fontSize: '13px', marginBottom: 'var(--space-4)' }}
+                        value={prompt}
+                        onChange={(e) => setPrompt(e.target.value)}
+                    />
+                    <div className="flex gap-2">
+                        <button className="btn btn-primary btn-sm" onClick={handlePromptSave}>
+                            Save Prompt
+                        </button>
+                        <button className="btn btn-secondary btn-sm" onClick={handlePromptReset}>
+                            Reset to Default
+                        </button>
+                    </div>
+                </div>
+
+
                 <div className="card" style={{ marginBottom: 'var(--space-6)' }}>
-                    <h3 style={{ marginBottom: 'var(--space-5)' }}>Email Accounts</h3>
-                    <button
-                        className="btn btn-primary"
-                        onClick={handleAddAccount}
-                        disabled={addingAccount}
-                    >
-                        {addingAccount ? 'Redirecting...' : '+ Add Account'}
-                    </button>
+                    <div className="flex justify-between items-center" style={{ marginBottom: 'var(--space-5)' }}>
+                        <h3 style={{ margin: 0 }}>Email Accounts</h3>
+                        <button
+                            className="btn btn-primary btn-sm"
+                            onClick={() => setSelectedProvider('select')}
+                        >
+                            + Add Account
+                        </button>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 'var(--space-3)' }}>
+                        {accounts?.map(acc => (
+                            <div key={acc.id} className="card flex justify-between items-center hover-trigger" style={{ padding: 'var(--space-2) var(--space-4)', background: 'var(--color-bg-tertiary)', minHeight: '64px', border: '1px solid var(--color-border)' }}>
+                                <div className="flex items-center gap-3 overflow-hidden" style={{ flex: 1 }}>
+                                    <span style={{ fontSize: '18px', flexShrink: 0 }}>
+                                        {acc.provider === 'gmail' ? '🇬' : acc.provider === 'zoho' ? '🇿' : acc.provider === 'proton' ? '🇵' : acc.provider === 'hover' ? '🇭' : '📧'}
+                                    </span>
+                                    <div className="overflow-hidden">
+                                        <div style={{ fontWeight: 500, fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{acc.emailAddress}</div>
+                                        <div className="text-sm text-muted" style={{ fontSize: '11px' }}>
+                                            {acc.lastSyncAt ? `Last sync: ${new Date(acc.lastSyncAt).toLocaleTimeString()}` : 'Never synced'}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex gap-1 flex-shrink-0">
+                                    <button className="btn btn-ghost btn-sm" title="Sync Now" onClick={() => handleSyncNow(acc.id)}>🔄</button>
+                                    <button className="btn btn-ghost btn-sm" title="Disconnect" style={{ color: 'var(--color-danger)' }} onClick={() => handleDisconnect(acc.id)}>🗑️</button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Provider Selection Modal */}
+                    {selectedProvider === 'select' && (
+                        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+                            <div className="card" style={{ width: 400, padding: 'var(--space-6)' }}>
+                                <h3 style={{ marginBottom: 'var(--space-5)' }}>Choose Provider</h3>
+                                <div className="flex flex-col gap-2">
+                                    <button className="btn btn-secondary w-full text-left justify-start" onClick={handleAddAccountGoogle}>🇬 Google / Gmail</button>
+                                    <button className="btn btn-secondary w-full text-left justify-start" onClick={handleAddAccountZoho}>🇿 Zoho Mail</button>
+                                    <button className="btn btn-secondary w-full text-left justify-start" onClick={() => { setImapDetails({ ...imapDetails, provider: 'proton' }); setSelectedProvider('imap-proton'); }}>📧 Proton Mail (via Bridge)</button>
+                                    <button className="btn btn-secondary w-full text-left justify-start" onClick={() => { setImapDetails({ ...imapDetails, provider: 'hover' }); setSelectedProvider('imap-hover'); }}>📧 Hover</button>
+                                    <button className="btn btn-secondary w-full text-left justify-start" onClick={() => { setImapDetails({ ...imapDetails, provider: 'imap' }); setSelectedProvider('imap-custom'); }}>🌐 Custom IMAP/SMTP</button>
+                                    <button className="btn btn-ghost w-full mt-4" onClick={() => setSelectedProvider(null)}>Cancel</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* IMAP Form Modal */}
+                    {selectedProvider?.startsWith('imap-') && (
+                        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+                            <div className="card" style={{ width: 500, padding: 'var(--space-6)' }}>
+                                <h3 style={{ marginBottom: 'var(--space-5)' }}>Connect via IMAP</h3>
+                                <div className="flex flex-col gap-4">
+                                    <div className="form-group">
+                                        <label className="form-label">Email Address</label>
+                                        <input type="email" className="form-input" value={imapDetails.emailAddress} onChange={e => setImapDetails({ ...imapDetails, emailAddress: e.target.value })} />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">IMAP Host</label>
+                                        <input type="text" className="form-input" value={imapDetails.imapHost} onChange={e => setImapDetails({ ...imapDetails, imapHost: e.target.value })} />
+                                    </div>
+                                    <div className="flex gap-4">
+                                        <div className="form-group flex-1">
+                                            <label className="form-label">Username</label>
+                                            <input type="text" className="form-input" value={imapDetails.imapUsername} onChange={e => setImapDetails({ ...imapDetails, imapUsername: e.target.value })} />
+                                        </div>
+                                        <div className="form-group flex-1">
+                                            <label className="form-label">Password</label>
+                                            <input type="password" className="form-input" value={imapDetails.imapPassword} onChange={e => setImapDetails({ ...imapDetails, imapPassword: e.target.value })} />
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2 mt-4">
+                                        <button className="btn btn-primary flex-1" onClick={handleAddAccountImap} disabled={addingAccount}>
+                                            {addingAccount ? 'Connecting...' : 'Connect Account'}
+                                        </button>
+                                        <button className="btn btn-secondary" onClick={() => setSelectedProvider('select')}>Back</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                <div className="card">
+                    <h3 style={{ marginBottom: 'var(--space-5)' }}>Categories (Folders)</h3>
+                    <p className="text-sm text-muted" style={{ marginBottom: 'var(--space-4)' }}>
+                        Manage your custom classification categories.
+                    </p>
+
+                    <div className="flex gap-2" style={{ marginBottom: 'var(--space-4)', maxWidth: 400 }}>
+                        <input
+                            type="text"
+                            className="form-input"
+                            placeholder="New category name..."
+                            value={newCatName}
+                            onChange={(e) => setNewCatName(e.target.value)}
+                        />
+                        <button
+                            className="btn btn-primary"
+                            onClick={handleCreateCategory}
+                            disabled={isCreatingCat || !newCatName.trim()}
+                        >
+                            Add
+                        </button>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 'var(--space-2)' }}>
+                        {categories?.map(cat => (
+                            <div key={cat.id} className="card hover-trigger" style={{ padding: 'var(--space-2) var(--space-3)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--font-size-sm)', background: 'var(--color-bg-tertiary)', position: 'relative' }}>
+                                <span>{cat.icon || '📁'}</span>
+                                <span style={{ fontWeight: 400, flex: 1 }}>{cat.name}</span>
+                                <button
+                                    className="btn btn-ghost btn-sm hover-visible"
+                                    style={{ color: 'var(--color-danger)', padding: '2px' }}
+                                    onClick={() => handleDeleteCategory(cat)}
+                                    title="Delete category"
+                                >
+                                    <Trash2 size={14} />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
                 </div>
 
                 <div className="card">
                     <h3 style={{ marginBottom: 'var(--space-5)' }}>Learned Rules</h3>
-                    <p className="text-muted">View and manage your classification rules...</p>
+                    <p className="text-sm text-muted" style={{ marginBottom: 'var(--space-4)' }}>
+                        Automatic routing rules based on your training.
+                    </p>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                        {rules?.length === 0 && <div className="text-muted text-sm">No learned rules yet. Categorize some emails to train the AI!</div>}
+                        {rules?.map(rule => (
+                            <div key={rule.id} className="card flex justify-between items-center" style={{ padding: 'var(--space-2) var(--space-4)', background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)' }}>
+                                <div style={{ fontSize: 'var(--font-size-sm)' }}>
+                                    <span className="text-muted">{rule.matchType === 'sender_domain' ? 'Domain' : 'Sender'}: </span>
+                                    <span style={{ fontWeight: 500 }}>{rule.matchValue}</span>
+                                    <span className="text-muted"> → </span>
+                                    <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>{rule.targetCategory?.name || 'Category Deleted'}</span>
+                                </div>
+                                <button
+                                    className="btn btn-ghost btn-sm"
+                                    style={{ color: 'var(--color-danger)' }}
+                                    onClick={() => deleteRuleMutation.mutate(rule.id)}
+                                    title="Delete rule"
+                                >
+                                    <Trash2 size={14} />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             </div>
+
+            <Toast
+                open={confirmToast.open}
+                onOpenChange={(open) => setConfirmToast(prev => ({ ...prev, open }))}
+                title={confirmToast.title}
+                description={confirmToast.description}
+                variant="danger"
+                action={{
+                    label: confirmToast.actionLabel,
+                    onClick: confirmToast.onConfirm
+                }}
+            />
         </div>
     );
 }

@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { google } from 'googleapis';
+import axios from 'axios';
 import { prisma } from '../lib/db';
 import { encrypt } from '../lib/encryption';
 import { requireAuth, AuthRequest } from '../middleware/auth.middleware';
@@ -13,7 +14,7 @@ function getOAuth2Client() {
     return new google.auth.OAuth2(
         process.env.GOOGLE_CLIENT_ID,
         process.env.GOOGLE_CLIENT_SECRET,
-        `${process.env.FRONTEND_URL}/auth/google/callback`
+        process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3001/api/oauth/google/callback'
     );
 }
 
@@ -22,6 +23,12 @@ const GMAIL_SCOPES = [
     'https://www.googleapis.com/auth/gmail.modify',
     'https://www.googleapis.com/auth/gmail.compose',
     'https://www.googleapis.com/auth/userinfo.email',
+];
+
+const ZOHO_SCOPES = [
+    'ZohoMail.accounts.ALL',
+    'ZohoMail.messages.ALL',
+    'ZohoMail.folders.ALL'
 ];
 
 // GET /api/oauth/google/url?userId=xxx - Get OAuth authorization URL (public)
@@ -121,6 +128,92 @@ router.get('/google/callback', async (req: Request, res: Response, next: NextFun
 
         // Redirect back to app
         res.redirect(`${process.env.FRONTEND_URL}/settings?connected=gmail`);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// GET /api/oauth/zoho/url?userId=xxx
+router.get('/zoho/url', (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const userId = req.query.userId as string | undefined;
+        if (!userId) throw errors.badRequest('Missing userId');
+
+        const state = signState(userId);
+        const params = new URLSearchParams({
+            client_id: process.env.ZOHO_CLIENT_ID!,
+            response_type: 'code',
+            redirect_uri: process.env.ZOHO_REDIRECT_URI || 'http://localhost:3001/api/oauth/zoho/callback',
+            scope: ZOHO_SCOPES.join(' '),
+            access_type: 'offline',
+            prompt: 'consent',
+            state,
+        });
+
+        res.json({
+            success: true,
+            data: { url: `https://accounts.zoho.com/oauth/v2/auth?${params.toString()}` },
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// GET /api/oauth/zoho/callback
+router.get('/zoho/callback', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { code, state } = req.query;
+        if (!code || !state) throw errors.badRequest('Missing code or state');
+
+        const verified = verifyState(state as string);
+        if (!verified) throw errors.badRequest('Invalid state');
+
+        const { userId } = verified;
+
+        // Exchange code for tokens
+        const tokenRes = await axios.post('https://accounts.zoho.com/oauth/v2/token', null, {
+            params: {
+                code,
+                client_id: process.env.ZOHO_CLIENT_ID,
+                client_secret: process.env.ZOHO_CLIENT_SECRET,
+                redirect_uri: process.env.ZOHO_REDIRECT_URI || 'http://localhost:3001/api/oauth/zoho/callback',
+                grant_type: 'authorization_code',
+            }
+        });
+
+        const { access_token, refresh_token, expires_in } = tokenRes.data;
+
+        // Get user info from Zoho (to get email)
+        const accountRes = await axios.get('https://mail.zoho.com/api/v1/accounts', {
+            headers: { Authorization: `Bearer ${access_token}` }
+        });
+
+        // Zoho returns an array of accounts, use primary one
+        const primaryAccount = accountRes.data.data[0];
+        const email = primaryAccount.mailboxAddress;
+
+        // Create or update account
+        await prisma.account.upsert({
+            where: {
+                userId_emailAddress: { userId, emailAddress: email }
+            },
+            update: {
+                accessTokenEncrypted: encrypt(access_token),
+                refreshTokenEncrypted: encrypt(refresh_token || ''),
+                tokenExpiresAt: new Date(Date.now() + (expires_in * 1000)),
+            },
+            create: {
+                userId,
+                provider: 'zoho',
+                emailAddress: email,
+                displayName: primaryAccount.accountName || email,
+                accessTokenEncrypted: encrypt(access_token),
+                refreshTokenEncrypted: encrypt(refresh_token || ''),
+                tokenExpiresAt: new Date(Date.now() + (expires_in * 1000)),
+            }
+        });
+
+        res.redirect(`${process.env.FRONTEND_URL}/settings?connected=zoho`);
     } catch (error) {
         next(error);
     }

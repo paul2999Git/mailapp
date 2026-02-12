@@ -104,8 +104,9 @@ export interface IProviderAdapter {
      * Sync messages from provider
      * @param cursor Optional cursor from previous sync for incremental updates
      * @param folderId Optional folder to sync (if null, syncs all)
+     * @param since Optional date to sync from (e.g. last 14 days)
      */
-    syncMessages(cursor?: string | null, folderId?: string | null): Promise<SyncResult>;
+    syncMessages(cursor?: string | null, folderId?: string | null, since?: Date): Promise<SyncResult>;
 
     /**
      * Fetch a single message by ID with full content
@@ -138,9 +139,19 @@ export interface IProviderAdapter {
     archive(providerMessageId: string): Promise<void>;
 
     /**
+     * Create a new folder/label
+     */
+    createFolder(name: string): Promise<NormalizedFolder>;
+
+    /**
      * Create a draft (NOT send - we only save drafts)
      */
     saveDraft(to: EmailAddress[], subject: string, body: string, inReplyTo?: string): Promise<string>;
+
+    /**
+     * Send an email message
+     */
+    sendMail(to: EmailAddress[], subject: string, body: string, options?: { cc?: EmailAddress[], bcc?: EmailAddress[], inReplyTo?: string }): Promise<void>;
 
     /**
      * Refresh OAuth tokens if needed

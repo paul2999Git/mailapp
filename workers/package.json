@@ -2,13 +2,14 @@
     "name": "@mailhub/workers",
     "version": "1.0.0",
     "private": true,
-    "main": "./dist/index.js",
+    "main": "./dist/workers/src/index.js",
     "scripts": {
         "dev": "tsx watch src/index.ts",
         "build": "tsc",
-        "start": "node dist/index.js"
+        "start": "node dist/workers/src/index.js"
     },
     "dependencies": {
+        "@google/generative-ai": "^0.24.1",
         "@mailhub/shared": "*",
         "@prisma/client": "^5.10.0",
         "bullmq": "^5.1.0",

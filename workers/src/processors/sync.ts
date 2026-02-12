@@ -1,7 +1,9 @@
 import { Job } from 'bullmq';
 import { PrismaClient } from '@prisma/client';
+import { AccountSyncService } from '../../../server/src/services/accountSync.service.js';
 
 const prisma = new PrismaClient();
+const syncService = new AccountSyncService();
 
 interface SyncJobData {
     type: 'all-accounts' | 'single-account';
@@ -54,23 +56,16 @@ async function syncAccount(accountId: string) {
     });
 
     try {
-        // TODO: Implement provider-specific sync logic
-        // For now, just log a placeholder
         console.log(`Syncing account: ${account.emailAddress} (${account.provider})`);
 
-        // Provider-specific sync would go here:
-        // switch (account.provider) {
-        //   case 'gmail':
-        //     await syncGmailAccount(account);
-        //     break;
-        //   case 'proton':
-        //     await syncImapAccount(account); // Via Proton Bridge
-        //     break;
-        //   case 'hover':
-        //   case 'zoho':
-        //     await syncImapAccount(account);
-        //     break;
-        // }
+        // Perform the actual sync using AccountSyncService
+        const result = await syncService.syncAccount(accountId);
+
+        console.log(`Sync completed for ${account.emailAddress}:`, {
+            messagesNew: result.messagesNew,
+            messagesUpdated: result.messagesUpdated,
+            foldersUpdated: result.foldersUpdated,
+        });
 
         // Update sync job status
         await prisma.syncJob.update({
@@ -78,6 +73,7 @@ async function syncAccount(accountId: string) {
             data: {
                 status: 'completed',
                 completedAt: new Date(),
+                messagesProcessed: result.messagesNew + result.messagesUpdated,
             },
         });
 

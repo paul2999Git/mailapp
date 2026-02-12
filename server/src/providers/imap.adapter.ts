@@ -27,16 +27,23 @@ export class ImapAdapter implements IProviderAdapter {
 
     private async getClient(): Promise<ImapFlow> {
         if (!this.client) {
+            console.log(`Connecting to ${this.provider} at ${this.config.host}:${this.config.port} (TLS: ${this.config.tls})`);
             this.client = new ImapFlow({
                 host: this.config.host,
                 port: this.config.port,
                 secure: this.config.tls,
+                tls: this.provider === 'proton' ? { rejectUnauthorized: false } : undefined,
                 auth: {
                     user: this.config.username,
                     pass: this.config.password,
                 },
                 logger: false,
             });
+
+            this.client.on('error', err => {
+                console.error(`IMAP Client Error (${this.provider} at ${this.config.host}):`, err);
+            });
+
             await this.client.connect();
         }
         return this.client;
@@ -91,7 +98,7 @@ export class ImapAdapter implements IProviderAdapter {
         return 'custom';
     }
 
-    async syncMessages(cursor?: string | null, folderId?: string | null): Promise<SyncResult> {
+    async syncMessages(cursor?: string | null, folderId?: string | null, since?: Date): Promise<SyncResult> {
         const client = await this.getClient();
         const messages: NormalizedMessage[] = [];
         const targetFolder = folderId || 'INBOX';
@@ -102,8 +109,17 @@ export class ImapAdapter implements IProviderAdapter {
             // Parse cursor as UID for incremental sync
             const sinceUid = cursor ? parseInt(cursor, 10) : 1;
 
-            // Fetch messages since cursor
-            const searchCriteria = cursor ? { uid: `${sinceUid}:*` } : { all: true };
+            // Fetch messages since cursor AND since date
+            const searchCriteria: any = {};
+            if (cursor) {
+                searchCriteria.uid = `${sinceUid}:*`;
+            } else if (!since) {
+                searchCriteria.all = true;
+            }
+
+            if (since) {
+                searchCriteria.since = since;
+            }
 
             let count = 0;
             const maxMessages = 100; // Limit per sync
@@ -120,7 +136,11 @@ export class ImapAdapter implements IProviderAdapter {
                 if (!msg.source) continue;
 
                 const parsed = await simpleParser(msg.source);
-                messages.push(this.normalizeMessage(msg, parsed));
+                const normalized = this.normalizeMessage(msg, parsed);
+                // Set folderId so we can map it to local database folder
+                normalized.folderId = targetFolder;
+
+                messages.push(normalized);
                 lastUid = Math.max(lastUid, msg.uid);
                 count++;
             }
@@ -278,6 +298,21 @@ export class ImapAdapter implements IProviderAdapter {
         await this.moveToFolder(providerMessageId, 'Archive');
     }
 
+    async createFolder(name: string): Promise<NormalizedFolder> {
+        const client = await this.getClient();
+        await client.mailboxCreate(name);
+
+        return {
+            providerFolderId: name,
+            name: name.split('/').pop() || name,
+            fullPath: name,
+            folderType: 'custom',
+            isSystem: false,
+            messageCount: 0,
+            unreadCount: 0,
+        };
+    }
+
     async saveDraft(to: EmailAddress[], subject: string, body: string, inReplyTo?: string): Promise<string> {
         const client = await this.getClient();
 
@@ -299,10 +334,59 @@ export class ImapAdapter implements IProviderAdapter {
         return 'draft';
     }
 
+    async sendMail(to: EmailAddress[], subject: string, body: string, options?: { cc?: EmailAddress[], bcc?: EmailAddress[], inReplyTo?: string }): Promise<void> {
+        const nodemailer = require('nodemailer');
+
+        // Build SMTP config from IMAP config (usually same host/auth for mail services)
+        // For Proton, SMTP is on port 1025 by default with Bridge
+        let smtpHost = this.config.host;
+        let smtpPort = 587; // Standard submission port
+        let secure = false; // STARTTLS
+
+        if (this.provider === 'proton') {
+            smtpHost = '127.0.0.1';
+            smtpPort = 1025;
+            secure = false;
+        } else if (this.provider === 'zoho') {
+            smtpHost = 'smtp.zoho.com';
+            smtpPort = 465;
+            secure = true;
+        } else if (this.provider === 'hover') {
+            smtpHost = 'mail.hover.com';
+            smtpPort = 465;
+            secure = true;
+        }
+
+        const transporter = nodemailer.createTransport({
+            host: smtpHost,
+            port: smtpPort,
+            secure: secure,
+            auth: {
+                user: this.config.username,
+                pass: this.config.password,
+            },
+        });
+
+        await transporter.sendMail({
+            from: this.config.username,
+            to: to.map(a => a.name ? `${a.name} <${a.email}>` : a.email).join(', '),
+            cc: options?.cc?.map(a => a.name ? `${a.name} <${a.email}>` : a.email).join(', '),
+            bcc: options?.bcc?.map(a => a.name ? `${a.name} <${a.email}>` : a.email).join(', '),
+            subject: subject,
+            text: body,
+            inReplyTo: options?.inReplyTo,
+            references: options?.inReplyTo,
+        });
+    }
     async disconnect(): Promise<void> {
         if (this.client) {
-            await this.client.logout();
-            this.client = null;
+            try {
+                await this.client.logout();
+            } catch (err) {
+                // Ignore disconnect errors if connection was already lost
+            } finally {
+                this.client = null;
+            }
         }
     }
 }
@@ -317,7 +401,8 @@ export class ProtonAdapter extends ImapAdapter {
         const protonConfig: ImapConfig = {
             ...config,
             host: config.host || '127.0.0.1',
-            port: config.port || 1143,
+            // Force 1143 if user put 993 for localhost (Bridge default)
+            port: (config.host === '127.0.0.1' && config.port === 993) ? 1143 : (config.port || 1143),
             tls: false, // Proton Bridge uses STARTTLS
         };
         super('proton', accountId, protonConfig);

@@ -75,6 +75,17 @@ export class GmailAdapter implements IProviderAdapter {
             });
         }
 
+        // Add virtual "Notifications" folder
+        folders.push({
+            providerFolderId: 'NOTIFICATIONS',
+            name: 'Notifications',
+            fullPath: 'Notifications',
+            folderType: 'custom',
+            isSystem: true,
+            messageCount: 0,
+            unreadCount: 0,
+        });
+
         return folders;
     }
 
@@ -89,14 +100,28 @@ export class GmailAdapter implements IProviderAdapter {
         }
     }
 
-    async syncMessages(cursor?: string | null, folderId?: string | null): Promise<SyncResult> {
+    async syncMessages(cursor?: string | null, folderId?: string | null, since?: Date): Promise<SyncResult> {
         const messages: NormalizedMessage[] = [];
         const labelId = folderId || 'INBOX';
+
+        let query = '';
+        if (since) {
+            const formattedDate = since.toISOString().split('T')[0].replace(/-/g, '/');
+            query = `after:${formattedDate}`;
+        }
+
+        // Ensure we only fetch Primary and Updates categories if syncing INBOX
+        let fullQuery = query;
+        if (labelId === 'INBOX') {
+            const categoryQuery = '{category:primary category:updates}';
+            fullQuery = query ? `${query} ${categoryQuery}` : categoryQuery;
+        }
 
         // List messages with pagination
         const listResponse = await this.gmail.users.messages.list({
             userId: 'me',
             labelIds: [labelId],
+            q: fullQuery || undefined,
             maxResults: 100,
             pageToken: cursor || undefined,
         });
@@ -196,7 +221,7 @@ export class GmailAdapter implements IProviderAdapter {
             isDraft,
 
             providerLabels: labels,
-            folderId: labels[0] || null,
+            folderId: labels.includes('CATEGORY_UPDATES') ? 'NOTIFICATIONS' : (labels.includes('INBOX') ? 'INBOX' : (labels[0] || null)),
         };
     }
 
@@ -259,17 +284,33 @@ export class GmailAdapter implements IProviderAdapter {
     private parseAddressHeader(header: string | null): EmailAddress[] {
         if (!header) return [];
 
-        // Simple email parsing - handles "Name <email>" and plain email formats
         const addresses: EmailAddress[] = [];
+        // Note: Simple split by comma. This may fail if names contain commas,
+        // but matches the previous implementation's behavior.
         const parts = header.split(',');
 
         for (const part of parts) {
-            const match = part.trim().match(/^(?:"?([^"<]*)"?\s*)?<?([^>]+@[^>]+)>?$/);
-            if (match) {
+            const trimmed = part.trim();
+            if (!trimmed) continue;
+
+            // 1. Try formatted "Name <email@domain.com>"
+            const bracketMatch = trimmed.match(/^(?:"?([^"]*)"?\s*)?<([^>]+@[^>]+)>$/);
+            if (bracketMatch) {
                 addresses.push({
-                    email: match[2].trim(),
-                    name: match[1]?.trim() || undefined,
+                    email: bracketMatch[2].trim(),
+                    name: bracketMatch[1]?.trim() || undefined,
                 });
+            } else {
+                // 2. Try plain "email@domain.com"
+                const emailMatch = trimmed.match(/^([^> \t]+@[^> \t]+)$/);
+                if (emailMatch) {
+                    addresses.push({
+                        email: emailMatch[1].trim(),
+                    });
+                } else if (trimmed.includes('@')) {
+                    // Fallback for anything that looks like an email but doesn't fit the strict regex
+                    addresses.push({ email: trimmed });
+                }
             }
         }
 
@@ -318,11 +359,14 @@ export class GmailAdapter implements IProviderAdapter {
 
     async moveToFolder(providerMessageId: string, folderId: string): Promise<void> {
         // For Gmail, moving means changing labels
+        // Map our virtual folder ID back to Gmail's system label
+        const gmailLabelId = folderId === 'NOTIFICATIONS' ? 'CATEGORY_UPDATES' : folderId;
+
         await this.gmail.users.messages.modify({
             userId: 'me',
             id: providerMessageId,
             requestBody: {
-                addLabelIds: [folderId],
+                addLabelIds: [gmailLabelId],
                 removeLabelIds: ['INBOX'],
             },
         });
@@ -343,6 +387,28 @@ export class GmailAdapter implements IProviderAdapter {
                 removeLabelIds: ['INBOX'],
             },
         });
+    }
+
+    async createFolder(name: string): Promise<NormalizedFolder> {
+        const response = await this.gmail.users.labels.create({
+            userId: 'me',
+            requestBody: {
+                name,
+                labelListVisibility: 'labelShow',
+                messageListVisibility: 'show',
+            },
+        });
+
+        const label = response.data;
+        return {
+            providerFolderId: label.id!,
+            name: label.name!,
+            fullPath: label.name!,
+            folderType: this.mapLabelType(label.id!),
+            isSystem: label.type === 'system',
+            messageCount: 0,
+            unreadCount: 0,
+        };
     }
 
     async saveDraft(to: EmailAddress[], subject: string, body: string, inReplyTo?: string): Promise<string> {
@@ -369,6 +435,44 @@ export class GmailAdapter implements IProviderAdapter {
         return response.data.id || 'draft';
     }
 
+    async sendMail(to: EmailAddress[], subject: string, body: string, options?: { cc?: EmailAddress[], bcc?: EmailAddress[], inReplyTo?: string }): Promise<void> {
+        const headers = [
+            `To: ${to.map(a => a.name ? `${a.name} <${a.email}>` : a.email).join(', ')}`,
+            `Subject: ${subject}`,
+        ];
+
+        if (options?.cc && options.cc.length > 0) {
+            headers.push(`Cc: ${options.cc.map(a => a.name ? `${a.name} <${a.email}>` : a.email).join(', ')}`);
+        }
+
+        if (options?.bcc && options.bcc.length > 0) {
+            headers.push(`Bcc: ${options.bcc.map(a => a.name ? `${a.name} <${a.email}>` : a.email).join(', ')}`);
+        }
+
+        if (options?.inReplyTo) {
+            headers.push(`In-Reply-To: ${options.inReplyTo}`);
+            headers.push(`References: ${options.inReplyTo}`);
+        }
+
+        headers.push('Content-Type: text/plain; charset=utf-8');
+        headers.push('MIME-Version: 1.0');
+
+        const rawMessage = [
+            ...headers,
+            '',
+            body,
+        ].join('\r\n');
+
+        const encodedMessage = Buffer.from(rawMessage).toString('base64url');
+
+        await this.gmail.users.messages.send({
+            userId: 'me',
+            requestBody: {
+                raw: encodedMessage,
+                threadId: options?.inReplyTo ? undefined : undefined, // Gmail handles threading via References/In-Reply-To if needed
+            },
+        });
+    }
     async refreshTokens(): Promise<OAuthConfig | null> {
         try {
             const { credentials } = await this.oauth2Client.refreshAccessToken();

@@ -59,8 +59,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
     };
 
-    const updateSettings = async (settings: Partial<UserSettings>) => {
-        const userData = await authApi.updateSettings(settings);
+    const updateSettings = async (settingsChange: Partial<UserSettings>) => {
+        if (!user) return;
+        const newSettings = { ...user.settings, ...settingsChange };
+        const userData = await authApi.updateSettings(newSettings);
         setUser(userData as UserWithSettings);
     };
 

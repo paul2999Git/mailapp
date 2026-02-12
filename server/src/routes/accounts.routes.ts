@@ -14,7 +14,7 @@ router.use(requireAuth);
 
 // Validation schemas
 const createAccountSchema = z.object({
-    provider: z.enum(['gmail', 'proton', 'hover', 'zoho']),
+    provider: z.enum(['gmail', 'proton', 'hover', 'zoho', 'imap']),
     emailAddress: z.string().email(),
     displayName: z.string().optional(),
     // For IMAP providers
@@ -84,7 +84,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         };
 
         // Handle IMAP credentials
-        if (data.provider === 'proton' || data.provider === 'hover') {
+        if (data.provider === 'proton' || data.provider === 'hover' || data.provider === 'imap') {
             if (!data.imapHost || !data.imapUsername || !data.imapPassword) {
                 throw errors.badRequest('IMAP credentials required for this provider');
             }
@@ -107,6 +107,11 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
                 isEnabled: true,
                 createdAt: true,
             },
+        });
+
+        // Trigger initial sync in background
+        accountSyncService.syncAccount(account.id).catch(err => {
+            console.error(`Initial sync failed for account ${account.id}:`, err);
         });
 
         res.status(201).json({

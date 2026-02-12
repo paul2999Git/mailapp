@@ -23,9 +23,11 @@ export interface AttachmentMeta {
 // User settings stored in JSONB
 export interface UserSettings {
     aiProvider: AIProviderType;
+    aiModel?: string;
     bodyPreviewChars: number;
     aggressiveness: 'low' | 'medium' | 'high';
     theme?: 'light' | 'dark' | 'system';
+    classificationPrompt?: string;
 }
 
 // AI classification result
@@ -102,4 +104,17 @@ export interface TokenPayload {
     email: string;
     iat: number;
     exp: number;
+}
+
+export interface ICategory {
+    id: string;
+    userId?: string | null;
+    name: string;
+    description?: string | null;
+    color?: string | null;
+    icon?: string | null;
+    priority: number;
+    isSystem: boolean;
+    unreadCount?: number;
+    createdAt: Date;
 }

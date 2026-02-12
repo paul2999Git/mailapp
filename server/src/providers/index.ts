@@ -2,6 +2,7 @@ import type { ProviderType } from '@mailhub/shared';
 import type { IProviderAdapter, ConnectionConfig, OAuthConfig, ImapConfig } from './types';
 import { GmailAdapter } from './gmail.adapter';
 import { ProtonAdapter, HoverAdapter, ImapAdapter } from './imap.adapter';
+import { ZohoAdapter } from './zoho.adapter';
 
 export * from './types';
 export { GmailAdapter } from './gmail.adapter';
@@ -37,8 +38,7 @@ export function createProviderAdapter(
         case 'zoho':
             // Zoho supports both OAuth and IMAP
             if (config.type === 'oauth') {
-                // TODO: Implement ZohoOAuthAdapter when needed
-                throw new Error('Zoho OAuth not yet implemented, use IMAP');
+                return new ZohoAdapter(accountId, config);
             }
             return new ImapAdapter('zoho', accountId, {
                 ...config,

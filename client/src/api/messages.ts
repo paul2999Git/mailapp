@@ -41,6 +41,7 @@ interface MessageFilters {
     accountId?: string;
     folderId?: string;
     category?: string;
+    isInbox?: boolean;
     isUnread?: boolean;
     isStarred?: boolean;
     page?: number;
@@ -53,6 +54,7 @@ export const messagesApi = {
         if (filters.accountId) params.set('accountId', filters.accountId);
         if (filters.folderId) params.set('folderId', filters.folderId);
         if (filters.category) params.set('category', filters.category);
+        if (filters.isInbox) params.set('isInbox', 'true');
         if (filters.isUnread) params.set('isUnread', 'true');
         if (filters.isStarred) params.set('isStarred', 'true');
         if (filters.page) params.set('page', String(filters.page));
@@ -72,4 +74,14 @@ export const messagesApi = {
 
     batch: (messageIds: string[], action: string, data?: { folderId?: string }) =>
         apiRequest<{ updated: number }>('POST', '/messages/batch', { messageIds, action, data }),
+
+    send: (data: {
+        accountId: string;
+        to: string;
+        subject: string;
+        body: string;
+        cc?: string;
+        bcc?: string;
+        inReplyTo?: string;
+    }) => apiRequest<{ sent: boolean }>('POST', '/messages/send', data),
 };

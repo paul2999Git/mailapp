@@ -2,10 +2,14 @@
     "extends": "../tsconfig.base.json",
     "compilerOptions": {
         "outDir": "./dist",
-        "rootDir": "./src"
+        "rootDir": ".."
     },
     "include": [
-        "src/**/*"
+        "src/**/*",
+        "../server/src/services/accountSync.service.ts",
+        "../server/src/services/threadHelper.ts",
+        "../server/src/providers/**/*",
+        "../server/src/lib/**/*"
     ],
     "references": [
         {

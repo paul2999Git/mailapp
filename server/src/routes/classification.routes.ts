@@ -2,6 +2,8 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { prisma } from '../lib/db';
 import { requireAuth, AuthRequest } from '../middleware/auth.middleware';
 import { errors } from '../middleware/errorHandler';
+import { classificationService } from '../services/classification.service';
+import { classificationQueue } from '../lib/queues';
 
 const router = Router();
 
@@ -11,20 +13,26 @@ router.use(requireAuth);
 router.get('/categories', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const authReq = req as AuthRequest;
-
-        const categories = await prisma.category.findMany({
-            where: {
-                OR: [
-                    { userId: null, isSystem: true },
-                    { userId: authReq.user!.id },
-                ],
-            },
-            orderBy: { priority: 'asc' },
-        });
+        const categories = await classificationService.listCategories(authReq.user!.id);
 
         res.json({
             success: true,
             data: categories,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// POST /api/classification/categories - Create a new category
+router.post('/categories', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const category = await classificationService.createCategory(authReq.user!.id, req.body);
+
+        res.status(201).json({
+            success: true,
+            data: category,
         });
     } catch (error) {
         next(error);
@@ -91,9 +99,15 @@ router.post('/override', async (req: Request, res: Response, next: NextFunction)
             throw errors.notFound('Message');
         }
 
-        // Create override record
-        const override = await prisma.userOverride.create({
-            data: {
+        // Create or update override record
+        const override = await prisma.userOverride.upsert({
+            where: {
+                messageId_actionType: {
+                    messageId,
+                    actionType: actionType || 'categorize',
+                }
+            },
+            create: {
                 userId: authReq.user!.id,
                 messageId,
                 originalCategoryId: message.classifications[0]?.categoryId,
@@ -104,6 +118,12 @@ router.post('/override', async (req: Request, res: Response, next: NextFunction)
                 applyToSender: applyToSender || false,
                 applyToDomain: applyToDomain || false,
             },
+            update: {
+                newCategoryId,
+                makePermanent: makePermanent || false,
+                applyToSender: applyToSender || false,
+                applyToDomain: applyToDomain || false,
+            }
         });
 
         // Update message category
@@ -117,7 +137,14 @@ router.post('/override', async (req: Request, res: Response, next: NextFunction)
                 data: {
                     aiCategory: category.name,
                     aiConfidence: 1.0, // User override = 100% confidence
+                    isHidden: false,  // Unhide if it was hidden (e.g. from AI-Trash)
+                    neverShow: false, // Ensure it shows up
                 },
+            });
+
+            // Sync with provider in background
+            classificationService.moveMessageOnProvider(messageId, category.name).catch(err => {
+                console.error('Failed to sync message move with provider:', err);
             });
         }
 
@@ -141,7 +168,7 @@ router.post('/override', async (req: Request, res: Response, next: NextFunction)
                     matchType,
                     matchValue,
                     targetCategoryId: newCategoryId,
-                    action: 'categorize',
+                    action: 'route',
                     priority: 100,
                 },
                 update: {
@@ -202,6 +229,266 @@ router.delete('/rules/:id', async (req: Request, res: Response, next: NextFuncti
         res.json({
             success: true,
             data: { deleted: true },
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// DELETE /api/classification/categories/:id - Delete a category
+router.delete('/categories/:id', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        await classificationService.deleteCategory(authReq.user!.id, req.params.id);
+
+        res.json({
+            success: true,
+            data: { deleted: true },
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// POST /api/classification/bulk-classify - Queue all unclassified messages
+router.post('/bulk-classify', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const userId = authReq.user!.id;
+
+        // Find all unclassified messages for this user
+        const unclassifiedMessages = await prisma.message.findMany({
+            where: {
+                account: { userId },
+                aiCategory: null,
+                isHidden: false,
+                neverShow: false,
+            },
+            select: { id: true },
+        });
+
+        console.log(`Queuing ${unclassifiedMessages.length} messages for classification (User: ${userId})`);
+
+        // Add to queue
+        for (const msg of unclassifiedMessages) {
+            await classificationQueue.add('classify-message', {
+                messageId: msg.id
+            }, {
+                removeOnComplete: true,
+                removeOnFail: 1000,
+            });
+        }
+
+        res.json({
+            success: true,
+            data: { queued: unclassifiedMessages.length },
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// GET /api/classification/stats - Get classification progress stats
+router.get('/stats', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const userId = authReq.user!.id;
+
+        const [unclassifiedCount, classifiedCount, queueCounts] = await Promise.all([
+            prisma.message.count({
+                where: { account: { userId }, aiCategory: null, isHidden: false }
+            }),
+            prisma.message.count({
+                where: { account: { userId }, aiCategory: { not: null }, isHidden: false }
+            }),
+            classificationQueue.getJobCounts('waiting', 'active', 'completed', 'failed')
+        ]);
+
+        res.json({
+            success: true,
+            data: {
+                unclassified: unclassifiedCount,
+                classified: classifiedCount,
+                total: unclassifiedCount + classifiedCount,
+                queue: queueCounts
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// POST /api/classification/reset-queue - Clear failed jobs
+router.post('/reset-queue', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        // Clear failed jobs
+        await classificationQueue.clean(0, 1000, 'failed');
+
+        res.json({
+            success: true,
+            data: { reset: true },
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// POST /api/classification/empty-trash - Move all AI-Trash messages to actual Trash
+router.post('/empty-trash', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const userId = authReq.user!.id;
+
+        // 1. Find the "AI-Trash" category ID for this user
+        const category = await prisma.category.findFirst({
+            where: { userId, name: 'AI-Trash' },
+            select: { id: true, name: true }
+        });
+
+        if (!category) {
+            return res.json({ success: true, data: { moved: 0 } });
+        }
+
+        // 2. Find all messages in this category
+        const messages = await prisma.message.findMany({
+            where: {
+                account: { userId },
+                aiCategory: category.name,
+                isHidden: false,
+            },
+            include: { account: true }
+        });
+
+        if (messages.length === 0) {
+            return res.json({ success: true, data: { moved: 0 } });
+        }
+
+        // 3. Group by account to reuse adapters
+        const byAccount = messages.reduce((acc, msg) => {
+            if (!acc[msg.accountId]) acc[msg.accountId] = [];
+            acc[msg.accountId].push(msg);
+            return acc;
+        }, {} as Record<string, typeof messages>);
+
+        const { accountSyncService } = await import('../services/accountSync.service.js');
+
+        let totalMoved = 0;
+
+        // 4. Move each account's messages to provider trash
+        for (const [accountId, accountMessages] of Object.entries(byAccount)) {
+            const adapter = await accountSyncService.getAdapterForAccount(accountId);
+            try {
+                for (const msg of accountMessages) {
+                    await adapter.moveToTrash(msg.providerMessageId);
+                }
+            } finally {
+                await adapter.disconnect();
+            }
+        }
+
+        // 5. Update database status
+        const result = await prisma.message.updateMany({
+            where: {
+                id: { in: messages.map(m => m.id) }
+            },
+            data: {
+                isHidden: true,
+                aiCategory: 'Trash (Actual)', // Mark to avoid confusion
+            }
+        });
+
+        totalMoved = result.count;
+
+        res.json({
+            success: true,
+            data: { moved: totalMoved },
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// POST /api/classification/categories/:id/mark-read - Mark all messages in category as read
+router.post('/categories/:id/mark-read', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const userId = authReq.user!.id;
+        const categoryId = req.params.id;
+
+        // 1. Find the category and ensure it belongs to the user
+        const category = await prisma.category.findFirst({
+            where: { id: categoryId, userId },
+            select: { name: true }
+        });
+
+        if (!category) {
+            throw errors.notFound('Category');
+        }
+
+        // 2. Find all unread messages in this category
+        const messages = await prisma.message.findMany({
+            where: {
+                account: { userId },
+                aiCategory: category.name,
+                isRead: false,
+                isHidden: false,
+            },
+            select: { id: true, providerMessageId: true, accountId: true, threadId: true }
+        });
+
+        if (messages.length === 0) {
+            return res.json({ success: true, count: 0 });
+        }
+
+        // 3. Mark all messages as read locally
+        await prisma.message.updateMany({
+            where: {
+                id: { in: messages.map(m => m.id) }
+            },
+            data: { isRead: true }
+        });
+
+        // 4. Group by account to update provider
+        const byAccount = messages.reduce((acc, msg) => {
+            if (!acc[msg.accountId]) acc[msg.accountId] = [];
+            acc[msg.accountId].push(msg);
+            return acc;
+        }, {} as Record<string, typeof messages>);
+
+        const { accountSyncService } = await import('../services/accountSync.service.js');
+
+        // 5. Update each account on provider
+        for (const [accountId, accountMessages] of Object.entries(byAccount)) {
+            try {
+                const adapter = await accountSyncService.getAdapterForAccount(accountId);
+                try {
+                    for (const msg of accountMessages) {
+                        try {
+                            await adapter.markRead(msg.providerMessageId, true);
+                        } catch (err) {
+                            console.error(`Failed to mark message ${msg.providerMessageId} as read on provider:`, err);
+                        }
+                    }
+                } finally {
+                    await adapter.disconnect();
+                }
+            } catch (err) {
+                console.error(`Failed to get adapter for account ${accountId}:`, err);
+            }
+        }
+
+        // 6. Recalculate thread stats
+        const { updateThreadStats } = await import('../services/threadHelper.js');
+        const uniqueThreadIds = [...new Set(messages.map(m => (m as any).threadId).filter(Boolean))] as string[];
+
+        // Call updateThreadStats for each unique threadId
+        for (const threadId of uniqueThreadIds) {
+            await updateThreadStats(threadId);
+        }
+
+        res.json({
+            success: true,
+            count: messages.length,
         });
     } catch (error) {
         next(error);
