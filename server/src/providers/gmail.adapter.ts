@@ -6,6 +6,7 @@ import type {
     NormalizedMessage,
     NormalizedFolder,
     SyncResult,
+    Attachment,
 } from './types';
 
 /**
@@ -160,7 +161,27 @@ export class GmailAdapter implements IProviderAdapter {
             const msg = response.data;
             if (!msg.payload) return null;
 
-            return this.normalizeMessage(msg);
+            const normalized = this.normalizeMessage(msg);
+
+            // Fetch attachment contents for single message fetch
+            if (normalized.hasAttachments) {
+                normalized.fullAttachments = [];
+                for (const att of normalized.attachments) {
+                    if (att.providerPartId) {
+                        try {
+                            const { content } = await this.fetchAttachment(providerMessageId, att.providerPartId);
+                            normalized.fullAttachments.push({
+                                ...att,
+                                content
+                            });
+                        } catch (err) {
+                            console.error(`Failed to fetch attachment ${att.name} for message ${providerMessageId}:`, err);
+                        }
+                    }
+                }
+            }
+
+            return normalized;
         } catch (error) {
             console.error(`Failed to fetch message ${providerMessageId}:`, error);
             return null;
@@ -208,9 +229,9 @@ export class GmailAdapter implements IProviderAdapter {
             dateSent: getHeader('Date') ? new Date(getHeader('Date')!) : null,
             dateReceived: new Date(parseInt(msg.internalDate || '0', 10)),
 
-            bodyText,
-            bodyHtml,
-            bodyPreview: msg.snippet || bodyText.substring(0, 500),
+            bodyText: bodyText || null,
+            bodyHtml: bodyHtml || null,
+            bodyPreview: msg.snippet || bodyText.substring(0, 500) || null,
 
             hasAttachments: this.hasAttachments(msg.payload!),
             attachments: this.extractAttachments(msg.payload!),
@@ -258,8 +279,8 @@ export class GmailAdapter implements IProviderAdapter {
         return checkPart(payload);
     }
 
-    private extractAttachments(payload: gmail_v1.Schema$MessagePart): Array<{ name: string; size: number; mimeType: string }> {
-        const attachments: Array<{ name: string; size: number; mimeType: string }> = [];
+    private extractAttachments(payload: gmail_v1.Schema$MessagePart): Array<{ name: string; size: number; mimeType: string; providerPartId?: string }> {
+        const attachments: Array<{ name: string; size: number; mimeType: string; providerPartId?: string }> = [];
 
         const extractFromPart = (part: gmail_v1.Schema$MessagePart) => {
             if (part.filename && part.filename.length > 0) {
@@ -267,6 +288,7 @@ export class GmailAdapter implements IProviderAdapter {
                     name: part.filename,
                     size: part.body?.size || 0,
                     mimeType: part.mimeType || 'application/octet-stream',
+                    providerPartId: part.body?.attachmentId || undefined,
                 });
             }
 
@@ -335,6 +357,22 @@ export class GmailAdapter implements IProviderAdapter {
                 },
             });
         }
+    }
+
+    async fetchAttachment(providerMessageId: string, attachmentId: string): Promise<{ content: Buffer, contentType: string }> {
+        const response = await this.gmail.users.messages.attachments.get({
+            userId: 'me',
+            messageId: providerMessageId,
+            id: attachmentId,
+        });
+
+        const data = response.data.data;
+        if (!data) throw new Error('Attachment data not found');
+
+        return {
+            content: Buffer.from(data, 'base64url'),
+            contentType: 'application/octet-stream', // Fallback, usually get from part metadata
+        };
     }
 
     async markStarred(providerMessageId: string, isStarred: boolean): Promise<void> {
@@ -435,41 +473,46 @@ export class GmailAdapter implements IProviderAdapter {
         return response.data.id || 'draft';
     }
 
-    async sendMail(to: EmailAddress[], subject: string, body: string, options?: { cc?: EmailAddress[], bcc?: EmailAddress[], inReplyTo?: string }): Promise<void> {
-        const headers = [
-            `To: ${to.map(a => a.name ? `${a.name} <${a.email}>` : a.email).join(', ')}`,
-            `Subject: ${subject}`,
-        ];
-
-        if (options?.cc && options.cc.length > 0) {
-            headers.push(`Cc: ${options.cc.map(a => a.name ? `${a.name} <${a.email}>` : a.email).join(', ')}`);
+    async sendMail(
+        to: EmailAddress[],
+        subject: string,
+        body: string,
+        options?: {
+            cc?: EmailAddress[],
+            bcc?: EmailAddress[],
+            inReplyTo?: string,
+            attachments?: Attachment[]
         }
+    ): Promise<void> {
+        const nodemailer = require('nodemailer');
+        const mail = require('nodemailer/lib/mailer');
 
-        if (options?.bcc && options.bcc.length > 0) {
-            headers.push(`Bcc: ${options.bcc.map(a => a.name ? `${a.name} <${a.email}>` : a.email).join(', ')}`);
-        }
+        const mailOptions = {
+            from: 'me', // Gmail ignores this and uses the authenticated user
+            to: to.map(a => a.name ? `${a.name} <${a.email}>` : a.email).join(', '),
+            cc: options?.cc?.map(a => a.name ? `${a.name} <${a.email}>` : a.email).join(', '),
+            bcc: options?.bcc?.map(a => a.name ? `${a.name} <${a.email}>` : a.email).join(', '),
+            subject: subject,
+            text: body,
+            inReplyTo: options?.inReplyTo,
+            references: options?.inReplyTo ? [options.inReplyTo] : undefined,
+            attachments: options?.attachments?.map(a => ({
+                filename: a.name,
+                content: a.content,
+                contentType: a.mimeType
+            }))
+        };
 
-        if (options?.inReplyTo) {
-            headers.push(`In-Reply-To: ${options.inReplyTo}`);
-            headers.push(`References: ${options.inReplyTo}`);
-        }
-
-        headers.push('Content-Type: text/plain; charset=utf-8');
-        headers.push('MIME-Version: 1.0');
-
-        const rawMessage = [
-            ...headers,
-            '',
-            body,
-        ].join('\r\n');
-
-        const encodedMessage = Buffer.from(rawMessage).toString('base64url');
+        // Generating RFC822 message
+        const MailComposer = require('nodemailer/lib/mail-composer');
+        const composer = new MailComposer(mailOptions);
+        const message = await composer.compile().build();
+        const encodedMessage = Buffer.from(message).toString('base64url');
 
         await this.gmail.users.messages.send({
             userId: 'me',
             requestBody: {
                 raw: encodedMessage,
-                threadId: options?.inReplyTo ? undefined : undefined, // Gmail handles threading via References/In-Reply-To if needed
             },
         });
     }

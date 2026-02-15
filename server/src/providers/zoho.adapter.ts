@@ -85,10 +85,32 @@ export class ZohoAdapter implements IProviderAdapter {
         }
 
         const response = await this.apiRequest('GET', `/accounts/${zohoAccountId}/messages/view?folderId=${fid}`);
-        let messages: NormalizedMessage[] = response.data.map((msg: any) => this.normalizeMessage(msg));
+        let listMessages: any[] = response.data || [];
 
         if (since) {
-            messages = messages.filter(m => m.dateReceived >= since);
+            listMessages = listMessages.filter((msg: any) => {
+                const receivedTime = Number(msg.receivedTime || msg.sentDateInGMT);
+                return new Date(receivedTime) >= since;
+            });
+        }
+
+        // The list endpoint doesn't include body content - fetch each message's content individually
+        // Content endpoint requires folderId in the path: /folders/{folderId}/messages/{messageId}/content
+        const messages: NormalizedMessage[] = [];
+        for (const msg of listMessages) {
+            const msgFolderId = msg.folderId || fid;
+            try {
+                const contentResponse = await this.apiRequest(
+                    'GET',
+                    `/accounts/${zohoAccountId}/folders/${msgFolderId}/messages/${msg.messageId}/content`
+                );
+                const content = contentResponse.data?.content || null;
+                messages.push(this.normalizeMessage({ ...msg, content }));
+            } catch (err: any) {
+                console.error(`Failed to fetch Zoho message content for ${msg.messageId}:`, err.response?.status, err.response?.data || err.message);
+                // Still include the message but without body content
+                messages.push(this.normalizeMessage(msg));
+            }
         }
 
         return {
@@ -106,14 +128,37 @@ export class ZohoAdapter implements IProviderAdapter {
 
     async fetchMessage(providerMessageId: string): Promise<NormalizedMessage | null> {
         const accounts = await this.apiRequest('GET', '/accounts');
-        const accountId = accounts.data[0].accountId;
-        const response = await this.apiRequest('GET', `/accounts/${accountId}/messages/${providerMessageId}/content`);
-        return this.normalizeMessage(response.data);
+        const zohoAccountId = accounts.data[0].accountId;
+
+        // Find the inbox folderId (content endpoint requires it)
+        const folders = await this.fetchFolders();
+        const inbox = folders.find(f => f.name.toLowerCase() === 'inbox');
+        const fid = inbox?.providerFolderId || 'inbox';
+
+        // Get message body content using the folder-based endpoint
+        try {
+            const contentResponse = await this.apiRequest(
+                'GET',
+                `/accounts/${zohoAccountId}/folders/${fid}/messages/${providerMessageId}/content`
+            );
+            const content = contentResponse.data?.content || null;
+            return this.normalizeMessage({
+                messageId: providerMessageId,
+                content,
+            });
+        } catch (err: any) {
+            console.error(`Failed to fetch Zoho message content for ${providerMessageId}:`, err.response?.status, err.response?.data || err.message);
+            return null;
+        }
     }
 
     private normalizeMessage(msg: any): NormalizedMessage {
         const sentTime = Number(msg.sentDateInGMT || msg.receivedTime);
         const receivedTime = Number(msg.receivedTime || msg.sentDateInGMT);
+        const content = msg.content || null;
+
+        // Zoho content is HTML - extract plain text fallback by stripping tags
+        const bodyText = content ? content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() : null;
 
         return {
             providerMessageId: msg.messageId,
@@ -128,9 +173,9 @@ export class ZohoAdapter implements IProviderAdapter {
             replyTo: null,
             dateSent: new Date(sentTime),
             dateReceived: new Date(receivedTime),
-            bodyText: msg.content,
-            bodyHtml: msg.content,
-            bodyPreview: msg.summary,
+            bodyText: bodyText,
+            bodyHtml: content,
+            bodyPreview: msg.summary || (bodyText ? bodyText.substring(0, 500) : null),
             hasAttachments: msg.hasAttachment === '1',
             attachments: [],
             sizeBytes: msg.size ? parseInt(msg.size) : null,

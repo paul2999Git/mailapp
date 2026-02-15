@@ -52,8 +52,9 @@ export async function findOrCreateThread(accountId: string, userId: string, msg:
         });
     }
 
-    // Always trigger recalculation of participants for existing threads
-    await updateThreadStats(thread.id);
+    // We don't call updateThreadStats(thread.id) here anymore because for new messages,
+    // the message hasn't been created yet so the stats would be wrong (0).
+    // The caller (accountSync.service.ts) must call it AFTER creating the message.
 
     return thread;
 }

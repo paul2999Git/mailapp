@@ -7,6 +7,7 @@ import type {
     NormalizedMessage,
     NormalizedFolder,
     SyncResult,
+    Attachment,
 } from './types';
 
 /**
@@ -226,6 +227,12 @@ export class ImapAdapter implements IProviderAdapter {
                 size: a.size || 0,
                 mimeType: a.contentType || 'application/octet-stream',
             })) || [],
+            fullAttachments: parsed.attachments?.map(a => ({
+                name: a.filename || 'attachment',
+                size: a.size || 0,
+                mimeType: a.contentType || 'application/octet-stream',
+                content: a.content
+            })),
             sizeBytes: parsed.text?.length || null,
 
             isRead: imapMsg.flags?.has('\\Seen') || false,
@@ -286,6 +293,8 @@ export class ImapAdapter implements IProviderAdapter {
 
     async markRead(providerMessageId: string, isRead: boolean): Promise<void> {
         const client = await this.getClient();
+        // Use a more generic way to get mailbox lock - currently hardcoded to INBOX
+        // but normalizeMessage has folderId now.
         const lock = await client.getMailboxLock('INBOX');
 
         try {
@@ -294,6 +303,29 @@ export class ImapAdapter implements IProviderAdapter {
             } else {
                 await client.messageFlagsRemove(providerMessageId, ['\\Seen'], { uid: true });
             }
+        } finally {
+            lock.release();
+        }
+    }
+
+    async fetchAttachment(providerMessageId: string, attachmentName: string): Promise<{ content: Buffer, contentType: string }> {
+        const client = await this.getClient();
+        const lock = await client.getMailboxLock('INBOX');
+        try {
+            // For IMAP, the easiest way with mailparser is to fetch the full message
+            // and extract the specific attachment by name.
+            const msg = await client.fetchOne(providerMessageId, { source: true }, { uid: true });
+            if (!msg || !msg.source) throw new Error('Message not found');
+
+            const parsed = await simpleParser(msg.source);
+            const attachment = parsed.attachments.find(a => a.filename === attachmentName);
+
+            if (!attachment) throw new Error('Attachment not found');
+
+            return {
+                content: attachment.content,
+                contentType: attachment.contentType
+            };
         } finally {
             lock.release();
         }
@@ -369,7 +401,17 @@ export class ImapAdapter implements IProviderAdapter {
         return 'draft';
     }
 
-    async sendMail(to: EmailAddress[], subject: string, body: string, options?: { cc?: EmailAddress[], bcc?: EmailAddress[], inReplyTo?: string }): Promise<void> {
+    async sendMail(
+        to: EmailAddress[],
+        subject: string,
+        body: string,
+        options?: {
+            cc?: EmailAddress[],
+            bcc?: EmailAddress[],
+            inReplyTo?: string,
+            attachments?: Attachment[]
+        }
+    ): Promise<void> {
         const nodemailer = require('nodemailer');
 
         // Build SMTP config from IMAP config (usually same host/auth for mail services)
@@ -411,6 +453,11 @@ export class ImapAdapter implements IProviderAdapter {
             text: body,
             inReplyTo: options?.inReplyTo,
             references: options?.inReplyTo,
+            attachments: options?.attachments?.map(a => ({
+                filename: a.name,
+                content: a.content,
+                contentType: a.mimeType
+            }))
         });
     }
     async disconnect(): Promise<void> {

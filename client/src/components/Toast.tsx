@@ -10,7 +10,7 @@ interface ToastProps {
         label: string;
         onClick: () => void;
     };
-    variant?: 'default' | 'danger';
+    variant?: 'default' | 'danger' | 'success';
 }
 
 export const Toast = ({ open, onOpenChange, title, description, action, variant = 'default' }: ToastProps) => {

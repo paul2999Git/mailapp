@@ -43,7 +43,7 @@ export default function Inbox() {
         refetchInterval: (query) => {
             const data = query.state.data;
             if (data?.queue && (data.queue.waiting > 0 || data.queue.active > 0)) {
-                return 2000;
+                return 5000; // Poll every 5s when classification is active
             }
             return 30000; // Check less frequently if nothing is happening
         }

@@ -25,6 +25,7 @@ export interface NormalizedMessage {
 
     hasAttachments: boolean;
     attachments: AttachmentMeta[];
+    fullAttachments?: Attachment[]; // Used for forwarding/downloading, contains actual buffers
     sizeBytes: number | null;
 
     isRead: boolean;
@@ -46,6 +47,13 @@ export interface NormalizedFolder {
     isSystem: boolean;
     messageCount: number;
     unreadCount: number;
+}
+
+/**
+ * Full attachment with content
+ */
+export interface Attachment extends AttachmentMeta {
+    content: Buffer;
 }
 
 /**
@@ -151,7 +159,22 @@ export interface IProviderAdapter {
     /**
      * Send an email message
      */
-    sendMail(to: EmailAddress[], subject: string, body: string, options?: { cc?: EmailAddress[], bcc?: EmailAddress[], inReplyTo?: string }): Promise<void>;
+    sendMail(
+        to: EmailAddress[],
+        subject: string,
+        body: string,
+        options?: {
+            cc?: EmailAddress[],
+            bcc?: EmailAddress[],
+            inReplyTo?: string,
+            attachments?: Attachment[]
+        }
+    ): Promise<void>;
+
+    /**
+     * Fetch attachment content
+     */
+    fetchAttachment(providerMessageId: string, attachmentName: string): Promise<{ content: Buffer, contentType: string }>;
 
     /**
      * Refresh OAuth tokens if needed

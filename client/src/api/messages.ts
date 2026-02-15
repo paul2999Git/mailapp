@@ -83,5 +83,6 @@ export const messagesApi = {
         cc?: string;
         bcc?: string;
         inReplyTo?: string;
+        forwardFromId?: string;
     }) => apiRequest<{ sent: boolean }>('POST', '/messages/send', data),
 };

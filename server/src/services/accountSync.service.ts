@@ -266,6 +266,10 @@ export class AccountSyncService {
                     removeOnFail: 1000,
                 });
 
+                // Update thread stats AFTER creating message to include it in counts
+                const { updateThreadStats } = await import('./threadHelper.js');
+                await updateThreadStats(thread.id);
+
                 messagesNew++;
             }
         }

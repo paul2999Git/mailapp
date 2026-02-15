@@ -390,7 +390,7 @@ router.post('/batch', async (req: Request, res: Response, next: NextFunction) =>
 router.post('/send', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const authReq = req as AuthRequest;
-        const { accountId, to, cc, bcc, subject, body, inReplyTo } = req.body;
+        const { accountId, to, cc, bcc, subject, body, inReplyTo, forwardFromId } = req.body;
 
         if (!accountId || !to || !subject || !body) {
             throw errors.badRequest('accountId, to, subject, and body are required');
@@ -432,6 +432,14 @@ router.post('/send', async (req: Request, res: Response, next: NextFunction) => 
 
         const adapter = createProviderAdapter(account.provider as any, account.id, config);
 
+        let attachments: any[] = [];
+        if (forwardFromId) {
+            const original = await adapter.fetchMessage(forwardFromId);
+            if (original?.fullAttachments) {
+                attachments = original.fullAttachments;
+            }
+        }
+
         await adapter.sendMail(
             to.split(',').map((email: string) => ({ email: email.trim() })),
             subject,
@@ -440,6 +448,7 @@ router.post('/send', async (req: Request, res: Response, next: NextFunction) => 
                 cc: cc ? cc.split(',').map((email: string) => ({ email: email.trim() })) : undefined,
                 bcc: bcc ? bcc.split(',').map((email: string) => ({ email: email.trim() })) : undefined,
                 inReplyTo,
+                attachments
             }
         );
 

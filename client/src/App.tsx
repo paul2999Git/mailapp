@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import Inbox from './pages/Inbox';
 import Thread from './pages/Thread';
 import Settings from './pages/Settings';
+import Rules from './pages/Rules';
 import Layout from './components/Layout';
 
 function App() {
@@ -36,6 +37,7 @@ function App() {
                 <Route path="/inbox/folder/:folderId" element={<Inbox />} />
                 <Route path="/account/:accountId" element={<Inbox />} />
                 <Route path="/thread/:threadId" element={<Thread />} />
+                <Route path="/rules" element={<Rules />} />
                 <Route path="/settings" element={<Settings />} />
             </Route>
             <Route path="/login" element={<Navigate to="/inbox" replace />} />

@@ -26,6 +26,22 @@ interface ThreadData {
     }>;
 }
 
+function processEmailHtml(html: string) {
+    if (!html) return html;
+    try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        doc.querySelectorAll('a').forEach(link => {
+            link.setAttribute('target', '_blank');
+            link.setAttribute('rel', 'noopener noreferrer');
+        });
+        return doc.body.innerHTML;
+    } catch (e) {
+        console.error('Error processing email HTML:', e);
+        return html;
+    }
+}
+
 export default function Thread() {
     const { threadId } = useParams();
     const navigate = useNavigate();
@@ -164,6 +180,23 @@ export default function Thread() {
         });
     };
 
+    const handleForward = (message: any) => {
+        console.log('➡️ Forwarding message:', message);
+        if (!message) {
+            console.error('❌ Cannot forward: message is null');
+            return;
+        }
+
+        const subject = thread?.subjectNormalized || message.subject || 'No Subject';
+        const forwardSubject = subject.toLowerCase().startsWith('fwd:') ? subject : `Fwd: ${subject}`;
+
+        openCompose({
+            accountId: message.accountId,
+            subject: forwardSubject,
+            forwardFromId: message.id
+        });
+    };
+
     if (isLoading) {
         return (
             <div className="loading-screen">
@@ -237,6 +270,12 @@ export default function Thread() {
                                 </div>
                             </div>
                             <div className="flex gap-2">
+                                <button
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={() => handleForward(message)}
+                                >
+                                    Forward
+                                </button>
                                 <button
                                     className="btn btn-ghost btn-sm"
                                     onClick={() => handleReplyAll(message)}
@@ -335,7 +374,7 @@ export default function Thread() {
                                 overflow: 'hidden'
                             }}
                             dangerouslySetInnerHTML={{
-                                __html: message.bodyHtml ||
+                                __html: processEmailHtml(message.bodyHtml) ||
                                     (message.bodyText ? `<div style="white-space: pre-wrap; font-family: inherit;">${message.bodyText}</div>` :
                                         `<div class="text-muted" style="font-style: italic; opacity: 0.5;">(No message content)</div>`)
                             }}

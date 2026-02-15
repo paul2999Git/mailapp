@@ -17,6 +17,7 @@ interface ComposeContextType {
         cc?: string;
         bcc?: string;
         replyToId?: string;
+        forwardFromId?: string;
     }) => void;
 }
 
@@ -249,6 +250,10 @@ export default function Layout() {
 
                         <div className="nav-section">
                             <span className="nav-section-title">Manage</span>
+                            <NavLink to="/rules" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                                <span>📋</span>
+                                <span>Rules</span>
+                            </NavLink>
                             <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                                 <span>⚙️</span>
                                 <span>Settings</span>

@@ -18,6 +18,7 @@ export interface AttachmentMeta {
     name: string;
     size: number;
     mimeType: string;
+    providerPartId?: string; // ID used by provider to fetch the actual content
 }
 
 // User settings stored in JSONB

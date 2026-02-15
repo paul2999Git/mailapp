@@ -20,6 +20,7 @@ interface ComposeModalProps {
         cc?: string;
         bcc?: string;
         messageId?: string;
+        forwardFromId?: string;
     };
 }
 
@@ -32,7 +33,8 @@ export function ComposeModal({ isOpen, onClose, accounts, defaultAccountId, repl
         subject: '',
         body: '',
         cc: '',
-        bcc: ''
+        bcc: '',
+        forwardFromId: ''
     });
 
     useEffect(() => {
@@ -47,7 +49,8 @@ export function ComposeModal({ isOpen, onClose, accounts, defaultAccountId, repl
                 cc: replyTo.cc || '',
                 bcc: replyTo.bcc || '',
                 subject: replyTo.subject.startsWith('Re:') ? replyTo.subject : `Re: ${replyTo.subject}`,
-                body: ''
+                body: '',
+                forwardFromId: replyTo.forwardFromId || ''
             });
         } else {
             setDetails({
@@ -56,7 +59,8 @@ export function ComposeModal({ isOpen, onClose, accounts, defaultAccountId, repl
                 subject: '',
                 body: '',
                 cc: '',
-                bcc: ''
+                bcc: '',
+                forwardFromId: ''
             });
         }
     }, [isOpen, replyTo, defaultAccountId, accounts]);
@@ -70,7 +74,8 @@ export function ComposeModal({ isOpen, onClose, accounts, defaultAccountId, repl
 
         const payload = {
             ...details,
-            inReplyTo: replyTo?.messageId
+            inReplyTo: replyTo?.messageId,
+            forwardFromId: details.forwardFromId || undefined
         };
         console.log('📤 ComposeModal - Sending payload:', payload);
 
@@ -89,7 +94,7 @@ export function ComposeModal({ isOpen, onClose, accounts, defaultAccountId, repl
             <div className="modal-content">
                 <div className="modal-header">
                     <h2 style={{ fontSize: 'var(--font-size-lg)', fontWeight: 600 }}>
-                        {replyTo ? 'Reply' : 'New Message'}
+                        {details.forwardFromId ? 'Forward' : (replyTo ? 'Reply' : 'New Message')}
                     </h2>
                     <button onClick={onClose} className="btn-icon">
                         <X size={20} />
@@ -97,6 +102,13 @@ export function ComposeModal({ isOpen, onClose, accounts, defaultAccountId, repl
                 </div>
 
                 <form onSubmit={handleSend} className="modal-body">
+                    {details.forwardFromId && (
+                        <div style={{ padding: 'var(--space-3)', background: 'var(--color-accent-muted)', border: '1px solid var(--color-accent)', borderRadius: 'var(--radius-md)', color: 'var(--color-accent)', fontSize: 'var(--font-size-sm)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Paperclip size={16} />
+                            Forwarding original message with all attachments
+                        </div>
+                    )}
+
                     {error && (
                         <div style={{ padding: 'var(--space-3)', background: 'var(--color-accent-muted)', border: '1px solid var(--color-danger)', borderRadius: 'var(--radius-md)', color: 'var(--color-danger)', fontSize: 'var(--font-size-sm)' }}>
                             {error}

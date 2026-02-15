@@ -19,13 +19,19 @@ api.interceptors.request.use((config) => {
     return config;
 });
 
-// Handle auth errors
+// Handle auth and rate limit errors
 api.interceptors.response.use(
     (response) => response,
     (error) => {
         if (error.response?.status === 401) {
             localStorage.removeItem('token');
             window.location.href = '/login';
+        }
+        if (error.response?.status === 429) {
+            console.warn('Rate limited by server. Retrying after delay...');
+            const retryAfter = parseInt(error.response.headers['retry-after'] || '5', 10) * 1000;
+            return new Promise(resolve => setTimeout(resolve, Math.min(retryAfter, 10000)))
+                .then(() => api.request(error.config));
         }
         return Promise.reject(error);
     }
