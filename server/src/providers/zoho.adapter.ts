@@ -264,6 +264,30 @@ export class ZohoAdapter implements IProviderAdapter {
         });
     }
 
+    async fetchAttachment(providerMessageId: string, attachmentName: string): Promise<{ content: Buffer, contentType: string }> {
+        const accounts = await this.apiRequest('GET', '/accounts');
+        const accountId = accounts.data[0].accountId;
+
+        // First get the message to find the attachment ID
+        const folders = await this.fetchFolders();
+        const inbox = folders.find(f => f.name.toLowerCase() === 'inbox');
+        const fid = inbox?.providerFolderId || 'inbox';
+
+        const response = await axios({
+            method: 'GET',
+            url: `${this.baseUrl}/accounts/${accountId}/folders/${fid}/messages/${providerMessageId}/attachments/${attachmentName}`,
+            headers: {
+                Authorization: `Bearer ${this.config.accessToken}`,
+            },
+            responseType: 'arraybuffer',
+        });
+
+        return {
+            content: Buffer.from(response.data),
+            contentType: response.headers['content-type'] || 'application/octet-stream',
+        };
+    }
+
     async refreshTokens(): Promise<OAuthConfig | null> {
         try {
             const params = new URLSearchParams();
