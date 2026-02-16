@@ -25,7 +25,11 @@ export async function processSyncJob(job: Job<SyncJobData>) {
         });
 
         for (const account of accounts) {
-            await syncAccount(account.id);
+            try {
+                await syncAccount(account.id);
+            } catch (err) {
+                console.error(`⚠️ Sync failed for ${account.emailAddress} (${account.provider}), continuing with other accounts:`, err instanceof Error ? err.message : err);
+            }
             await job.updateProgress((accounts.indexOf(account) + 1) / accounts.length * 100);
         }
     } else if (job.data.accountId) {

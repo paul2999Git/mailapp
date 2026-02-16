@@ -817,6 +817,11 @@ Respond exactly in this JSON format:
                                     <div style={{ fontSize: 'var(--font-size-sm)' }}>
                                         <span className="text-muted">{rule.matchType === 'sender_domain' ? 'Domain' : 'Sender'}: </span>
                                         <span style={{ fontWeight: 500 }}>{rule.matchValue}</span>
+                                        {rule.account && (
+                                            <span className="text-muted" style={{ marginLeft: 8, fontSize: '11px' }}>
+                                                (inbox: {rule.account.emailAddress})
+                                            </span>
+                                        )}
                                         <span className="text-muted"> → </span>
                                         {rule.targetCategory && (
                                             <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>{rule.targetCategory.name}</span>

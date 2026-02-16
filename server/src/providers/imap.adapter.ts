@@ -27,27 +27,72 @@ export class ImapAdapter implements IProviderAdapter {
     }
 
     private async getClient(): Promise<ImapFlow> {
-        if (!this.client) {
-            console.log(`Connecting to ${this.provider} at ${this.config.host}:${this.config.port} (TLS: ${this.config.tls})`);
-            this.client = new ImapFlow({
-                host: this.config.host,
-                port: this.config.port,
-                secure: this.config.tls,
-                tls: this.provider === 'proton' ? { rejectUnauthorized: false } : undefined,
-                auth: {
-                    user: this.config.username,
-                    pass: this.config.password,
-                },
-                logger: false,
-            });
-
-            this.client.on('error', err => {
-                console.error(`IMAP Client Error (${this.provider} at ${this.config.host}):`, err);
-            });
-
-            await this.client.connect();
+        // If we have an existing client, verify it's still alive
+        if (this.client) {
+            try {
+                await this.client.noop();
+                return this.client;
+            } catch {
+                // Connection is dead, clean up and reconnect
+                console.log(`♻️ IMAP connection stale for ${this.provider}, reconnecting...`);
+                this.client = null;
+            }
         }
-        return this.client;
+
+        // Connect with retry logic (handles Proton Bridge restarts, network blips, etc.)
+        const maxRetries = 3;
+        let lastError: Error | null = null;
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                console.log(`Connecting to ${this.provider} at ${this.config.host}:${this.config.port} (TLS: ${this.config.tls}) [attempt ${attempt}/${maxRetries}]`);
+
+                const client = new ImapFlow({
+                    host: this.config.host,
+                    port: this.config.port,
+                    secure: this.config.tls,
+                    tls: this.provider === 'proton' ? { rejectUnauthorized: false } : undefined,
+                    auth: {
+                        user: this.config.username,
+                        pass: this.config.password,
+                    },
+                    logger: false,
+                    emitLogs: false,
+                });
+
+                // Clear cached client on connection errors so next call reconnects
+                client.on('error', (err: Error) => {
+                    console.error(`IMAP Client Error (${this.provider} at ${this.config.host}):`, err.message);
+                    this.client = null;
+                });
+
+                client.on('close', () => {
+                    console.log(`IMAP connection closed for ${this.provider}`);
+                    this.client = null;
+                });
+
+                // Connect with a timeout to avoid hanging on unresponsive servers
+                await Promise.race([
+                    client.connect(),
+                    new Promise<never>((_, reject) =>
+                        setTimeout(() => reject(new Error(`IMAP connect timeout after 30s for ${this.provider}`)), 30000)
+                    ),
+                ]);
+
+                this.client = client;
+                return this.client;
+            } catch (err) {
+                lastError = err instanceof Error ? err : new Error(String(err));
+                console.warn(`IMAP connect attempt ${attempt}/${maxRetries} failed for ${this.provider}: ${lastError.message}`);
+
+                if (attempt < maxRetries) {
+                    const delay = attempt * 2000; // 2s, 4s backoff
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+        }
+
+        throw lastError || new Error(`Failed to connect to ${this.provider} IMAP after ${maxRetries} attempts`);
     }
 
     async testConnection(): Promise<{ success: boolean; error?: string }> {
