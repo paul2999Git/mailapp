@@ -66,6 +66,9 @@ app.get('/health', (req, res) => {
 // Public API routes (no auth required)
 app.use('/api/auth', authRoutes);
 app.use('/api/oauth', oauthRoutes);
+app.get('/api/health', (req, res) => {
+    res.json({ success: true, data: { status: 'ok', timestamp: new Date().toISOString() } });
+});
 
 // All remaining /api routes require authentication
 app.use('/api', requireAuth);
@@ -77,6 +80,17 @@ app.use('/api/threads', threadsRoutes);
 app.use('/api/folders', foldersRoutes);
 app.use('/api/classification', classificationRoutes);
 app.use('/api/search', searchRoutes);
+
+// In production, serve the built React frontend
+if (process.env.NODE_ENV === 'production') {
+    const clientDist = path.join(__dirname, '../../client/dist');
+    app.use(express.static(clientDist));
+    // SPA fallback: serve index.html for any non-API route
+    app.get('*', (req, res, next) => {
+        if (req.path.startsWith('/api')) return next();
+        res.sendFile(path.join(clientDist, 'index.html'));
+    });
+}
 
 // Error handling
 app.use(errorHandler);
