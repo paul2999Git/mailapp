@@ -2,7 +2,7 @@ import { app } from './app';
 import { prisma } from './lib/db';
 import { redis } from './lib/redis';
 
-const PORT = process.env.PORT || 3001;
+const PORT = parseInt(process.env.PORT || '3001', 10);
 
 async function main() {
     // Test database connection
