@@ -190,9 +190,28 @@ export default function Thread() {
         const subject = thread?.subjectNormalized || message.subject || 'No Subject';
         const forwardSubject = subject.toLowerCase().startsWith('fwd:') ? subject : `Fwd: ${subject}`;
 
+        const fromStr = message.from?.name
+            ? `${message.from.name} <${message.from.email}>`
+            : message.from?.email || 'Unknown';
+        const dateStr = message.receivedAt
+            ? new Date(message.receivedAt).toLocaleString()
+            : '';
+
+        // Build plain-text version of original body for the compose textarea
+        let originalText = message.bodyText || '';
+        if (!originalText && message.bodyHtml) {
+            // Strip HTML tags to get readable text
+            const tmp = document.createElement('div');
+            tmp.innerHTML = message.bodyHtml;
+            originalText = tmp.textContent || tmp.innerText || '';
+        }
+
+        const forwardBody = `\n\n---------- Forwarded message ----------\nFrom: ${fromStr}\nDate: ${dateStr}\nSubject: ${subject}\n\n${originalText}`;
+
         openCompose({
             accountId: message.accountId,
             subject: forwardSubject,
+            body: forwardBody,
             forwardFromId: message.id
         });
     };

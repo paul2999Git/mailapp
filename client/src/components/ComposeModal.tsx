@@ -21,6 +21,7 @@ interface ComposeModalProps {
         bcc?: string;
         messageId?: string;
         forwardFromId?: string;
+        body?: string;
     };
 }
 
@@ -49,7 +50,7 @@ export function ComposeModal({ isOpen, onClose, accounts, defaultAccountId, repl
                 cc: replyTo.cc || '',
                 bcc: replyTo.bcc || '',
                 subject: replyTo.subject.startsWith('Re:') ? replyTo.subject : `Re: ${replyTo.subject}`,
-                body: '',
+                body: replyTo.body || '',
                 forwardFromId: replyTo.forwardFromId || ''
             });
         } else {

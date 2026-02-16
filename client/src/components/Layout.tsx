@@ -14,6 +14,7 @@ interface ComposeContextType {
         accountId?: string;
         to?: string;
         subject?: string;
+        body?: string;
         cc?: string;
         bcc?: string;
         replyToId?: string;
@@ -290,7 +291,9 @@ export default function Layout() {
                         subject: composeConfig.subject,
                         cc: composeConfig.cc,
                         bcc: composeConfig.bcc,
-                        messageId: composeConfig.replyToId
+                        messageId: composeConfig.replyToId,
+                        forwardFromId: composeConfig.forwardFromId,
+                        body: composeConfig.body
                     } : undefined}
                 />
 
