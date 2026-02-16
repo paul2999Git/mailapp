@@ -24,4 +24,7 @@ export const authApi = {
 
     updateSettings: (settings: Partial<UserSettings>) =>
         apiRequest<UserWithSettings>('PUT', '/auth/settings', { settings }),
+
+    changePassword: (currentPassword: string, newPassword: string) =>
+        apiRequest<{ message: string }>('POST', '/auth/change-password', { currentPassword, newPassword }),
 };

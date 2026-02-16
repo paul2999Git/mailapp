@@ -3,14 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 
 export default function Login() {
-    const [isRegister, setIsRegister] = useState(false);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [displayName, setDisplayName] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
 
-    const { login, register } = useAuth();
+    const { login } = useAuth();
     const navigate = useNavigate();
 
     const handleSubmit = async (e: FormEvent) => {
@@ -19,11 +17,7 @@ export default function Login() {
         setIsLoading(true);
 
         try {
-            if (isRegister) {
-                await register(email, password, displayName || undefined);
-            } else {
-                await login(email, password);
-            }
+            await login(email, password);
             navigate('/inbox');
         } catch (err) {
             setError(err instanceof Error ? err.message : 'An error occurred');
@@ -38,7 +32,7 @@ export default function Login() {
                 <div className="login-header">
                     <h1 className="login-title">📧 MailHub</h1>
                     <p className="login-subtitle">
-                        {isRegister ? 'Create your account' : 'Sign in to your inbox'}
+                        Sign in to your inbox
                     </p>
                 </div>
 
@@ -57,22 +51,6 @@ export default function Login() {
                 )}
 
                 <form onSubmit={handleSubmit}>
-                    {isRegister && (
-                        <div className="form-group">
-                            <label className="form-label" htmlFor="displayName">
-                                Display Name
-                            </label>
-                            <input
-                                id="displayName"
-                                type="text"
-                                className="form-input"
-                                value={displayName}
-                                onChange={(e) => setDisplayName(e.target.value)}
-                                placeholder="Your name"
-                            />
-                        </div>
-                    )}
-
                     <div className="form-group">
                         <label className="form-label" htmlFor="email">
                             Email
@@ -107,24 +85,12 @@ export default function Login() {
                     <button
                         type="submit"
                         className="btn btn-primary"
-                        style={{ width: '100%', marginBottom: 'var(--space-4)' }}
+                        style={{ width: '100%' }}
                         disabled={isLoading}
                     >
-                        {isLoading ? 'Please wait...' : isRegister ? 'Create Account' : 'Sign In'}
+                        {isLoading ? 'Please wait...' : 'Sign In'}
                     </button>
                 </form>
-
-                <div style={{ textAlign: 'center' }}>
-                    <button
-                        className="btn btn-ghost"
-                        onClick={() => {
-                            setIsRegister(!isRegister);
-                            setError('');
-                        }}
-                    >
-                        {isRegister ? 'Already have an account? Sign in' : "Don't have an account? Register"}
-                    </button>
-                </div>
             </div>
         </div>
     );

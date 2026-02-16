@@ -2,9 +2,103 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Trash2, RefreshCw, Loader2, Pencil, Plus, X, Check } from 'lucide-react';
 import { apiRequest } from '../api/client';
+import { authApi } from '../api/auth';
 import { useAuth } from '../hooks/useAuth';
 import { Toast } from '../components/Toast';
 import type { ICategory, AIProviderType } from '@mailhub/shared';
+
+function ChangePasswordSection() {
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const handleSubmit = async () => {
+        setStatus(null);
+        if (newPassword.length < 8) {
+            setStatus({ type: 'error', message: 'New password must be at least 8 characters' });
+            return;
+        }
+        if (newPassword !== confirmPassword) {
+            setStatus({ type: 'error', message: 'New passwords do not match' });
+            return;
+        }
+        setIsSubmitting(true);
+        try {
+            await authApi.changePassword(currentPassword, newPassword);
+            setStatus({ type: 'success', message: 'Password changed successfully' });
+            setCurrentPassword('');
+            setNewPassword('');
+            setConfirmPassword('');
+        } catch (err) {
+            setStatus({ type: 'error', message: err instanceof Error ? err.message : 'Failed to change password' });
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    return (
+        <div className="card" style={{ marginTop: 'var(--space-5)' }}>
+            <h3 style={{ margin: '0 0 var(--space-4) 0', fontSize: 'var(--font-size-md)' }}>Change Password</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', maxWidth: '400px' }}>
+                <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" htmlFor="currentPassword">Current Password</label>
+                    <input
+                        id="currentPassword"
+                        type="password"
+                        className="form-input"
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                        placeholder="Enter current password"
+                    />
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" htmlFor="newPassword">New Password</label>
+                    <input
+                        id="newPassword"
+                        type="password"
+                        className="form-input"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="Min 8 characters"
+                    />
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" htmlFor="confirmPassword">Confirm New Password</label>
+                    <input
+                        id="confirmPassword"
+                        type="password"
+                        className="form-input"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="Re-enter new password"
+                    />
+                </div>
+                {status && (
+                    <div style={{
+                        padding: 'var(--space-2) var(--space-3)',
+                        borderRadius: 'var(--radius-md)',
+                        fontSize: 'var(--font-size-sm)',
+                        background: status.type === 'success' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                        color: status.type === 'success' ? 'var(--color-success, #22c55e)' : 'var(--color-danger)',
+                        border: `1px solid ${status.type === 'success' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                    }}>
+                        {status.message}
+                    </div>
+                )}
+                <button
+                    className="btn btn-primary"
+                    onClick={handleSubmit}
+                    disabled={isSubmitting || !currentPassword || !newPassword || !confirmPassword}
+                    style={{ alignSelf: 'flex-start' }}
+                >
+                    {isSubmitting ? 'Changing...' : 'Change Password'}
+                </button>
+            </div>
+        </div>
+    );
+}
 
 export default function Settings() {
     const { user, updateSettings } = useAuth();
@@ -771,6 +865,9 @@ Respond exactly in this JSON format:
                     </div>
                 </div>
             </div>
+
+            {/* Change Password */}
+            <ChangePasswordSection />
 
             <Toast
                 open={confirmToast.open}

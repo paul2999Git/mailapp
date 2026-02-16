@@ -5,8 +5,16 @@ import { z } from 'zod';
 import { prisma } from '../lib/db';
 import { requireAuth, AuthRequest } from '../middleware/auth.middleware';
 import { errors } from '../middleware/errorHandler';
-
+import rateLimit from 'express-rate-limit';
 const router = Router();
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 attempts per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts. Try again later.' }
+});
+
 
 // Validation schemas
 const registerSchema = z.object({
@@ -79,8 +87,8 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
     }
 });
 
-// POST /api/auth/login
-router.post('/login', async (req: Request, res: Response, next: NextFunction) => {
+// POST /api/auth/logi
+router.post('/login', loginLimiter, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { email, password } = loginSchema.parse(req.body);
 
@@ -186,6 +194,46 @@ router.put('/settings', requireAuth, async (req: Request, res: Response, next: N
             data: user,
         });
     } catch (error) {
+        next(error);
+    }
+});
+
+// POST /api/auth/change-password
+const changePasswordSchema = z.object({
+    currentPassword: z.string(),
+    newPassword: z.string().min(8, 'New password must be at least 8 characters'),
+});
+
+router.post('/change-password', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const { currentPassword, newPassword } = changePasswordSchema.parse(req.body);
+
+        const user = await prisma.user.findUnique({
+            where: { id: authReq.user!.id },
+            select: { passwordHash: true },
+        });
+
+        if (!user || !user.passwordHash) {
+            throw errors.badRequest('Cannot change password for this account');
+        }
+
+        const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+        if (!valid) {
+            throw errors.unauthorized('Current password is incorrect');
+        }
+
+        const newHash = await bcrypt.hash(newPassword, 12);
+        await prisma.user.update({
+            where: { id: authReq.user!.id },
+            data: { passwordHash: newHash },
+        });
+
+        res.json({ success: true, data: { message: 'Password changed successfully' } });
+    } catch (error) {
+        if (error instanceof z.ZodError) {
+            return next(errors.badRequest(error.errors[0].message));
+        }
         next(error);
     }
 });
