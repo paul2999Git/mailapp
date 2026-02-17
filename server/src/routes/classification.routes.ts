@@ -205,6 +205,46 @@ router.get('/rules', async (req: Request, res: Response, next: NextFunction) => 
             orderBy: { priority: 'desc' },
         });
 
+        // Auto-backfill: if any rules are missing accountId, try to infer it from messages
+        const rulesToBackfill = rules.filter(r => !r.accountId);
+        if (rulesToBackfill.length > 0) {
+            for (const rule of rulesToBackfill) {
+                try {
+                    let message;
+                    if (rule.matchType === 'sender_email') {
+                        message = await prisma.message.findFirst({
+                            where: {
+                                fromAddress: { equals: rule.matchValue, mode: 'insensitive' },
+                            },
+                            include: { account: { select: { id: true, emailAddress: true } } },
+                            orderBy: { dateReceived: 'desc' },
+                        });
+                    } else if (rule.matchType === 'sender_domain') {
+                        message = await prisma.message.findFirst({
+                            where: {
+                                fromAddress: { endsWith: `@${rule.matchValue}`, mode: 'insensitive' },
+                            },
+                            include: { account: { select: { id: true, emailAddress: true } } },
+                            orderBy: { dateReceived: 'desc' },
+                        });
+                    }
+
+                    if (message?.accountId) {
+                        // Persist the backfill
+                        await prisma.learnedRule.update({
+                            where: { id: rule.id },
+                            data: { accountId: message.accountId },
+                        });
+                        // Patch the in-memory object so the response is correct
+                        (rule as any).accountId = message.accountId;
+                        (rule as any).account = message.account;
+                    }
+                } catch (e) {
+                    // Non-critical - skip on error
+                }
+            }
+        }
+
         res.json({
             success: true,
             data: rules,
