@@ -191,7 +191,7 @@ export default function Settings() {
         onSuccess: () => {
             refetchRules();
             setShowCreateRule(false);
-            setNewRule({ matchType: 'sender_email', matchValue: '', targetCategoryId: '', targetFolderId: '' });
+            setNewRule({ matchType: 'sender_email', matchValue: '', targetCategoryId: '', targetFolderId: '', accountId: '' });
         }
     });
 
@@ -204,7 +204,7 @@ export default function Settings() {
     });
 
     const [showCreateRule, setShowCreateRule] = useState(false);
-    const [newRule, setNewRule] = useState({ matchType: 'sender_email', matchValue: '', targetCategoryId: '', targetFolderId: '' });
+    const [newRule, setNewRule] = useState({ matchType: 'sender_email', matchValue: '', targetCategoryId: '', targetFolderId: '', accountId: '' });
     const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
     const [editingRule, setEditingRule] = useState<any>({});
 
@@ -685,64 +685,83 @@ Respond exactly in this JSON format:
                     </div>
 
                     {showCreateRule && (
-                        <div style={{ marginBottom: 'var(--space-4)', padding: 'var(--space-4)', background: 'var(--color-bg-tertiary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 'var(--space-3)', alignItems: 'center' }}>
-                                <label className="form-label" style={{ margin: 0 }}>Match Type</label>
-                                <select
-                                    className="form-input"
-                                    value={newRule.matchType}
-                                    onChange={e => setNewRule({ ...newRule, matchType: e.target.value })}
-                                >
-                                    <option value="sender_email">Sender Email</option>
-                                    <option value="sender_domain">Sender Domain</option>
-                                </select>
-
-                                <label className="form-label" style={{ margin: 0 }}>
-                                    {newRule.matchType === 'sender_domain' ? 'Domain' : 'Email Address'}
-                                </label>
-                                <input
-                                    type="text"
-                                    className="form-input"
-                                    placeholder={newRule.matchType === 'sender_domain' ? 'example.com' : 'user@example.com'}
-                                    value={newRule.matchValue}
-                                    onChange={e => setNewRule({ ...newRule, matchValue: e.target.value })}
-                                />
-
-                                <label className="form-label" style={{ margin: 0 }}>Category</label>
-                                <select
-                                    className="form-input"
-                                    value={newRule.targetCategoryId}
-                                    onChange={e => setNewRule({ ...newRule, targetCategoryId: e.target.value })}
-                                >
-                                    <option value="">-- None --</option>
-                                    {categories?.map(cat => (
-                                        <option key={cat.id} value={cat.id}>{cat.name}</option>
-                                    ))}
-                                </select>
-
-                                <label className="form-label" style={{ margin: 0 }}>Folder</label>
-                                <select
-                                    className="form-input"
-                                    value={newRule.targetFolderId}
-                                    onChange={e => setNewRule({ ...newRule, targetFolderId: e.target.value })}
-                                >
-                                    <option value="">-- None --</option>
-                                    {folders?.map((f: any) => (
-                                        <option key={f.id} value={f.id}>
-                                            {f.account?.emailAddress ? `${f.name} (${f.account.emailAddress})` : f.name}
-                                        </option>
-                                    ))}
-                                </select>
+                        <div className="card" style={{ padding: 'var(--space-4)', background: 'var(--color-bg-secondary)', border: '1px solid var(--color-primary-light)', marginBottom: 'var(--space-4)' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+                                <div className="form-group">
+                                    <label className="form-label">Match Type</label>
+                                    <select
+                                        className="form-input"
+                                        value={newRule.matchType}
+                                        onChange={e => setNewRule({ ...newRule, matchType: e.target.value })}
+                                    >
+                                        <option value="sender_email">Sender Email</option>
+                                        <option value="sender_domain">Sender Domain</option>
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">
+                                        {newRule.matchType === 'sender_domain' ? 'Domain' : 'Email Address'}
+                                    </label>
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        placeholder={newRule.matchType === 'sender_domain' ? 'example.com' : 'user@example.com'}
+                                        value={newRule.matchValue}
+                                        onChange={e => setNewRule({ ...newRule, matchValue: e.target.value })}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Category (Optional)</label>
+                                    <select
+                                        className="form-input"
+                                        value={newRule.targetCategoryId}
+                                        onChange={e => setNewRule({ ...newRule, targetCategoryId: e.target.value })}
+                                    >
+                                        <option value="">-- No Category --</option>
+                                        {categories?.map(cat => (
+                                            <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Folder (Optional)</label>
+                                    <select
+                                        className="form-input"
+                                        value={newRule.targetFolderId}
+                                        onChange={e => setNewRule({ ...newRule, targetFolderId: e.target.value })}
+                                    >
+                                        <option value="">-- No Folder --</option>
+                                        {folders?.map((f: any) => (
+                                            <option key={f.id} value={f.id}>
+                                                {f.account?.emailAddress ? `${f.name} (${f.account.emailAddress})` : f.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                                    <label className="form-label">Apply Only to Inbox (Optional)</label>
+                                    <select
+                                        className="form-input"
+                                        value={newRule.accountId}
+                                        onChange={e => setNewRule({ ...newRule, accountId: e.target.value })}
+                                    >
+                                        <option value="">-- All Inboxes --</option>
+                                        {accounts?.map(acc => (
+                                            <option key={acc.id} value={acc.id}>{acc.emailAddress} ({acc.provider})</option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
                             <div className="flex gap-2" style={{ marginTop: 'var(--space-4)', justifyContent: 'flex-end' }}>
                                 <button
-                                    className="btn btn-primary btn-sm"
+                                    className="btn btn-primary"
                                     disabled={!newRule.matchValue.trim() || (!newRule.targetCategoryId && !newRule.targetFolderId) || createRuleMutation.isPending}
                                     onClick={() => createRuleMutation.mutate({
                                         matchType: newRule.matchType,
                                         matchValue: newRule.matchValue,
                                         targetCategoryId: newRule.targetCategoryId || undefined,
                                         targetFolderId: newRule.targetFolderId || undefined,
+                                        accountId: newRule.accountId || undefined,
                                     })}
                                 >
                                     {createRuleMutation.isPending ? 'Creating...' : 'Create Rule'}

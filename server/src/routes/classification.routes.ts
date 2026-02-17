@@ -168,11 +168,13 @@ router.post('/override', async (req: Request, res: Response, next: NextFunction)
                     matchType,
                     matchValue,
                     targetCategoryId: newCategoryId,
+                    accountId: message.accountId,
                     action: 'route',
                     priority: 100,
                 },
                 update: {
                     targetCategoryId: newCategoryId,
+                    accountId: message.accountId,
                     timesApplied: { increment: 1 },
                     lastAppliedAt: new Date(),
                 },

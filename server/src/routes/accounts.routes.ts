@@ -174,18 +174,36 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
 router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const authReq = req as AuthRequest;
-        const { displayName, isEnabled, backfillTargetDate } = req.body;
+        const {
+            displayName,
+            isEnabled,
+            backfillTargetDate,
+            imapHost,
+            imapPort,
+            smtpHost,
+            smtpPort,
+            imapUsername,
+            imapPassword
+        } = req.body;
+
+        const updateData: any = {
+            ...(displayName !== undefined && { displayName }),
+            ...(isEnabled !== undefined && { isEnabled }),
+            ...(backfillTargetDate !== undefined && { backfillTargetDate: new Date(backfillTargetDate) }),
+            ...(imapHost !== undefined && { imapHost }),
+            ...(imapPort !== undefined && { imapPort }),
+            ...(smtpHost !== undefined && { smtpHost }),
+            ...(smtpPort !== undefined && { smtpPort }),
+            ...(imapUsername !== undefined && { imapUsername }),
+            ...(imapPassword !== undefined && { imapPasswordEncrypted: encrypt(imapPassword) }),
+        };
 
         const account = await prisma.account.updateMany({
             where: {
                 id: req.params.id,
                 userId: authReq.user!.id,
             },
-            data: {
-                ...(displayName !== undefined && { displayName }),
-                ...(isEnabled !== undefined && { isEnabled }),
-                ...(backfillTargetDate !== undefined && { backfillTargetDate: new Date(backfillTargetDate) }),
-            },
+            data: updateData,
         });
 
         if (account.count === 0) {
