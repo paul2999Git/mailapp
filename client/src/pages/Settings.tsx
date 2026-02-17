@@ -731,11 +731,13 @@ Respond exactly in this JSON format:
                                         onChange={e => setNewRule({ ...newRule, targetFolderId: e.target.value })}
                                     >
                                         <option value="">-- No Folder --</option>
-                                        {folders?.map((f: any) => (
-                                            <option key={f.id} value={f.id}>
-                                                {f.account?.emailAddress ? `${f.name} (${f.account.emailAddress})` : f.name}
-                                            </option>
-                                        ))}
+                                        {folders
+                                            ?.filter((f: any) => !newRule.accountId || f.accountId === newRule.accountId)
+                                            .map((f: any) => (
+                                                <option key={f.id} value={f.id}>
+                                                    {newRule.accountId ? f.name : (f.account?.emailAddress ? `${f.name} (${f.account.emailAddress})` : f.name)}
+                                                </option>
+                                            ))}
                                     </select>
                                 </div>
                                 <div className="form-group" style={{ gridColumn: 'span 2' }}>
@@ -782,38 +784,52 @@ Respond exactly in this JSON format:
                         {rules?.map(rule => (
                             editingRuleId === rule.id ? (
                                 <div key={rule.id} style={{ padding: 'var(--space-3) var(--space-4)', background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-primary)', borderRadius: 'var(--radius-md)' }}>
-                                    <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: 'var(--space-2)', alignItems: 'center', fontSize: 'var(--font-size-sm)' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr 100px 1fr', gap: 'var(--space-2)', alignItems: 'center', fontSize: 'var(--font-size-sm)' }}>
                                         <span className="text-muted">{rule.matchType === 'sender_domain' ? 'Domain' : 'Sender'}:</span>
                                         <span style={{ fontWeight: 500 }}>{rule.matchValue}</span>
 
-                                        <label className="text-muted">Category</label>
-                                        <select
-                                            className="form-input"
-                                            style={{ padding: '4px 8px', fontSize: 'var(--font-size-sm)' }}
-                                            value={editingRule.targetCategoryId || ''}
-                                            onChange={e => setEditingRule({ ...editingRule, targetCategoryId: e.target.value })}
-                                        >
-                                            <option value="">-- None --</option>
-                                            {categories?.map(cat => (
-                                                <option key={cat.id} value={cat.id}>{cat.name}</option>
-                                            ))}
-                                        </select>
-
-                                        <label className="text-muted">Folder</label>
-                                        <select
-                                            className="form-input"
-                                            style={{ padding: '4px 8px', fontSize: 'var(--font-size-sm)' }}
-                                            value={editingRule.targetFolderId || ''}
-                                            onChange={e => setEditingRule({ ...editingRule, targetFolderId: e.target.value })}
-                                        >
-                                            <option value="">-- None --</option>
-                                            {folders?.map((f: any) => (
-                                                <option key={f.id} value={f.id}>
-                                                    {f.account?.emailAddress ? `${f.name} (${f.account.emailAddress})` : f.name}
-                                                </option>
-                                            ))}
-                                        </select>
+                                        <span className="text-muted">Inbox:</span>
+                                        <span style={{ fontWeight: 500, color: 'var(--color-primary)' }}>
+                                            {rule.account?.emailAddress || <span className="text-muted" style={{ fontWeight: 400, fontStyle: 'italic' }}>All Inboxes</span>}
+                                        </span>
                                     </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
+                                        <div>
+                                            <label className="text-muted" style={{ fontSize: 'var(--font-size-xs)', display: 'block', marginBottom: 4 }}>Category</label>
+                                            <select
+                                                className="form-input"
+                                                style={{ padding: '4px 8px', fontSize: 'var(--font-size-sm)' }}
+                                                value={editingRule.targetCategoryId || ''}
+                                                onChange={e => setEditingRule({ ...editingRule, targetCategoryId: e.target.value })}
+                                            >
+                                                <option value="">-- None --</option>
+                                                {categories?.map(cat => (
+                                                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        <div>
+                                            <label className="text-muted" style={{ fontSize: 'var(--font-size-xs)', display: 'block', marginBottom: 4 }}>Folder</label>
+                                            <select
+                                                className="form-input"
+                                                style={{ padding: '4px 8px', fontSize: 'var(--font-size-sm)' }}
+                                                value={editingRule.targetFolderId || ''}
+                                                onChange={e => setEditingRule({ ...editingRule, targetFolderId: e.target.value })}
+                                            >
+                                                <option value="">-- None --</option>
+                                                {folders
+                                                    ?.filter((f: any) => !rule.accountId || f.accountId === rule.accountId)
+                                                    .map((f: any) => (
+                                                        <option key={f.id} value={f.id}>
+                                                            {rule.accountId ? f.name : (f.account?.emailAddress ? `${f.name} (${f.account.emailAddress})` : f.name)}
+                                                        </option>
+                                                    ))}
+                                            </select>
+                                        </div>
+                                    </div>
+
                                     <div className="flex gap-2" style={{ marginTop: 'var(--space-3)', justifyContent: 'flex-end' }}>
                                         <button className="btn btn-ghost btn-sm" onClick={() => setEditingRuleId(null)}>
                                             <X size={14} /> Cancel
