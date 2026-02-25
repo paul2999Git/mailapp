@@ -577,7 +577,7 @@ Respond exactly in this JSON format:
                     {/* Provider Selection Modal */}
                     {selectedProvider === 'select' && (
                         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-                            <div className="card" style={{ width: 400, padding: 'var(--space-6)' }}>
+                            <div className="card" style={{ width: '800px', maxWidth: '95vw', padding: 'var(--space-6)' }}>
                                 <h3 style={{ marginBottom: 'var(--space-5)' }}>Choose Provider</h3>
                                 <div className="flex flex-col gap-2">
                                     <button className="btn btn-secondary w-full text-left justify-start" onClick={handleAddAccountGoogle}>🇬 Google / Gmail</button>
@@ -594,7 +594,7 @@ Respond exactly in this JSON format:
                     {/* IMAP Form Modal */}
                     {selectedProvider?.startsWith('imap-') && (
                         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-                            <div className="card" style={{ width: 500, padding: 'var(--space-6)' }}>
+                            <div className="card" style={{ width: '800px', maxWidth: '95vw', padding: 'var(--space-6)' }}>
                                 <h3 style={{ marginBottom: 'var(--space-5)' }}>Connect via IMAP</h3>
                                 <div className="flex flex-col gap-4">
                                     <div className="form-group">
@@ -605,15 +605,13 @@ Respond exactly in this JSON format:
                                         <label className="form-label">IMAP Host</label>
                                         <input type="text" className="form-input" value={imapDetails.imapHost} onChange={e => setImapDetails({ ...imapDetails, imapHost: e.target.value })} />
                                     </div>
-                                    <div className="flex gap-4">
-                                        <div className="form-group flex-1">
-                                            <label className="form-label">Username</label>
-                                            <input type="text" className="form-input" value={imapDetails.imapUsername} onChange={e => setImapDetails({ ...imapDetails, imapUsername: e.target.value })} />
-                                        </div>
-                                        <div className="form-group flex-1">
-                                            <label className="form-label">Password</label>
-                                            <input type="password" className="form-input" value={imapDetails.imapPassword} onChange={e => setImapDetails({ ...imapDetails, imapPassword: e.target.value })} />
-                                        </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Username</label>
+                                        <input type="text" className="form-input" value={imapDetails.imapUsername} onChange={e => setImapDetails({ ...imapDetails, imapUsername: e.target.value })} />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Password</label>
+                                        <input type="password" className="form-input" value={imapDetails.imapPassword} onChange={e => setImapDetails({ ...imapDetails, imapPassword: e.target.value })} />
                                     </div>
                                     <div className="flex gap-2 mt-4">
                                         <button className="btn btn-primary flex-1" onClick={handleAddAccountImap} disabled={addingAccount}>
