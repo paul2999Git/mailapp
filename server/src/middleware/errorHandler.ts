@@ -21,9 +21,7 @@ export function errorHandler(
         success: false,
         error: {
             code,
-            message: process.env.NODE_ENV === 'production' && statusCode === 500
-                ? 'An unexpected error occurred'
-                : message,
+            message,
         },
     });
 }

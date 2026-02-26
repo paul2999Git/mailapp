@@ -261,15 +261,22 @@ router.post('/:id/sync', async (req: Request, res: Response, next: NextFunction)
             throw errors.notFound('Account');
         }
 
-        // Import sync service dynamically to avoid circular deps
         const result = await accountSyncService.syncAccount(req.params.id);
 
         res.json({
             success: true,
             data: result,
         });
-    } catch (error) {
-        next(error);
+    } catch (error: any) {
+        console.error(`Sync failed for account ${req.params.id}:`, error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'SYNC_FAILED',
+                message: error.message || 'Sync failed',
+                stack: error.stack,
+            },
+        });
     }
 });
 
