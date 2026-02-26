@@ -12,6 +12,7 @@ export interface ThreadItem {
     primaryCategory: string | null;
     messages: Array<{
         id: string;
+        accountId: string;
         fromName: string;
         fromAddress: string;
         bodyPreview: string;
@@ -50,6 +51,6 @@ export const threadsApi = {
     get: (id: string) =>
         apiRequest<ThreadItem>('GET', `/threads/${id}`),
 
-    batch: (threadIds: string[], action: 'delete' | 'markRead' | 'markUnread') =>
-        apiRequest<{ updated: number }>('POST', '/threads/batch', { threadIds, action }),
+    batch: (threadIds: string[], action: 'delete' | 'markRead' | 'markUnread' | 'move' | 'categorize', data?: { folderId?: string; categoryId?: string }) =>
+        apiRequest<{ updated: number }>('POST', '/threads/batch', { threadIds, action, data }),
 };

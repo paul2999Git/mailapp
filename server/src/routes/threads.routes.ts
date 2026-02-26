@@ -72,6 +72,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
                     messages: {
                         select: {
                             id: true,
+                            accountId: true,
                             fromName: true,
                             fromAddress: true,
                             bodyPreview: true,
@@ -267,6 +268,53 @@ router.post('/batch', async (req: Request, res: Response, next: NextFunction) =>
                     data: { isHidden: true },
                 });
                 totalUpdated = archiveResult.count;
+                break;
+
+            case 'move':
+                if (!data?.folderId) {
+                    throw errors.badRequest('folderId required for move action');
+                }
+                const moveTargetFolder = await prisma.folder.findUnique({ where: { id: data.folderId } });
+                if (!moveTargetFolder) throw errors.notFound('Destination folder');
+
+                const moveAccountIds = Object.keys(byAccount);
+                if (moveAccountIds.length > 1 || (moveAccountIds.length === 1 && moveAccountIds[0] !== moveTargetFolder.accountId)) {
+                    throw errors.badRequest('Cross-account moves are not supported');
+                }
+
+                for (const [accountId, msgs] of Object.entries(byAccount)) {
+                    const adapter = await accountSyncService.getAdapterForAccount(accountId);
+                    try {
+                        for (const msg of msgs) {
+                            await adapter.moveToFolder(msg.providerMessageId, moveTargetFolder.providerFolderId);
+                        }
+                    } catch (err) {
+                        console.error(`Failed to move messages for account ${accountId}:`, err);
+                    } finally {
+                        await adapter.disconnect();
+                    }
+                }
+                const moveResult = await prisma.message.updateMany({
+                    where: { id: { in: messageIds } },
+                    data: { currentFolderId: data.folderId },
+                });
+                totalUpdated = moveResult.count;
+                break;
+
+            case 'categorize':
+                if (!data?.categoryId) {
+                    throw errors.badRequest('categoryId required for categorize action');
+                }
+                const categoryToApply = await prisma.category.findFirst({
+                    where: { id: data.categoryId, userId: authReq.user!.id },
+                });
+                if (!categoryToApply) throw errors.notFound('Category');
+
+                const categorizeResult = await prisma.message.updateMany({
+                    where: { id: { in: messageIds } },
+                    data: { aiCategory: categoryToApply.name },
+                });
+                totalUpdated = categorizeResult.count;
                 break;
 
             default:

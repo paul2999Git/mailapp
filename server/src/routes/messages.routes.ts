@@ -373,6 +373,22 @@ router.post('/batch', async (req: Request, res: Response, next: NextFunction) =>
                 totalUpdated = archiveResult.count;
                 break;
 
+            case 'categorize':
+                if (!data?.categoryId) {
+                    throw errors.badRequest('categoryId required for categorize action');
+                }
+                const categoryToApply = await prisma.category.findFirst({
+                    where: { id: data.categoryId, userId: authReq.user!.id },
+                });
+                if (!categoryToApply) throw errors.notFound('Category');
+
+                const categorizeResult = await prisma.message.updateMany({
+                    where: { id: { in: messageIds } },
+                    data: { aiCategory: categoryToApply.name },
+                });
+                totalUpdated = categorizeResult.count;
+                break;
+
             default:
                 throw errors.badRequest('Invalid action');
         }

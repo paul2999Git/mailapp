@@ -90,8 +90,7 @@ export default function Inbox() {
             .filter(item => selectedIds.has(item.id))
             .flatMap(item => {
                 if (isConversationView) {
-                    // For threads, we need the accountId of the latest message or the thread's accountIds
-                    return (item as ThreadItem).messages.map(m => m.account.emailAddress); // Actually, let's just use the first one for simplicity or logic check
+                    return (item as ThreadItem).messages.map(m => m.accountId);
                 }
                 return [(item as MessageItem).accountId];
             })
@@ -159,7 +158,7 @@ export default function Inbox() {
     const batchMutation = useMutation({
         mutationFn: ({ ids, action, data }: { ids: string[], action: string, data?: any }) =>
             isConversationView
-                ? threadsApi.batch(ids, action as any)
+                ? threadsApi.batch(ids, action as any, data)
                 : messagesApi.batch(ids, action, data),
         onMutate: async ({ ids, action }) => {
             await queryClient.cancelQueries({ queryKey: ['messages'] });
@@ -311,6 +310,7 @@ export default function Inbox() {
 
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message?: MessageItem; thread?: ThreadItem } | null>(null);
     const [showBatchMoveMenu, setShowBatchMoveMenu] = useState(false);
+    const [showBatchCategoryMenu, setShowBatchCategoryMenu] = useState(false);
 
     const createFolderMutation = useMutation({
         mutationFn: ({ accountId, name }: { accountId: string, name: string }) =>
@@ -413,7 +413,7 @@ export default function Inbox() {
                             <div style={{ position: 'relative' }}>
                                 <button
                                     className="btn btn-secondary btn-sm"
-                                    onClick={() => setShowBatchMoveMenu(!showBatchMoveMenu)}
+                                    onClick={() => { setShowBatchMoveMenu(!showBatchMoveMenu); setShowBatchCategoryMenu(false); }}
                                     disabled={selectedAccountIds.size > 1}
                                     title={selectedAccountIds.size > 1 ? "Cannot move messages from multiple accounts at once" : ""}
                                 >
@@ -446,6 +446,45 @@ export default function Inbox() {
                                                     }}
                                                 >
                                                     <span>📁 {f.name}</span>
+                                                </button>
+                                            ))}
+                                    </div>
+                                )}
+                            </div>
+                            <div style={{ position: 'relative' }}>
+                                <button
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => { setShowBatchCategoryMenu(!showBatchCategoryMenu); setShowBatchMoveMenu(false); }}
+                                >
+                                    🏷️ Categorize
+                                </button>
+                                {showBatchCategoryMenu && (
+                                    <div className="card" style={{
+                                        position: 'absolute',
+                                        right: 0,
+                                        top: '100%',
+                                        zIndex: 100,
+                                        minWidth: 200,
+                                        padding: 'var(--space-2)',
+                                        marginTop: 'var(--space-1)',
+                                        boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+                                        border: '1px solid var(--color-border)',
+                                        maxHeight: 300,
+                                        overflowY: 'auto'
+                                    }}>
+                                        {[...categories]
+                                            .sort((a: any, b: any) => a.name.localeCompare(b.name))
+                                            .map((c: any) => (
+                                                <button
+                                                    key={c.id}
+                                                    className="nav-item"
+                                                    style={{ width: '100%', border: 'none', background: 'none', padding: 'var(--space-2) var(--space-3)', cursor: 'pointer', borderRadius: 'var(--radius-md)', textAlign: 'left' }}
+                                                    onClick={() => {
+                                                        batchMutation.mutate({ ids: Array.from(selectedIds), action: 'categorize', data: { categoryId: c.id } });
+                                                        setShowBatchCategoryMenu(false);
+                                                    }}
+                                                >
+                                                    <span>🏷️ {c.name}</span>
                                                 </button>
                                             ))}
                                     </div>
