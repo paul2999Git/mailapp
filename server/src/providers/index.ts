@@ -47,6 +47,12 @@ export function createProviderAdapter(
                 tls: true,
             });
 
+        case 'imap':
+            if (config.type !== 'imap') {
+                throw new Error('Generic IMAP provider requires IMAP configuration');
+            }
+            return new ImapAdapter('imap', accountId, config);
+
         default:
             throw new Error(`Unknown provider: ${provider}`);
     }

@@ -1,5 +1,5 @@
 // Email provider types
-export type ProviderType = 'gmail' | 'proton' | 'hover' | 'zoho';
+export type ProviderType = 'gmail' | 'proton' | 'hover' | 'zoho' | 'imap';
 
 // AI provider types
 export type AIProviderType = 'gemini' | 'claude' | 'openai';

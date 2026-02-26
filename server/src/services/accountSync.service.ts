@@ -74,25 +74,53 @@ export class AccountSyncService {
         try {
             return await this.performSync(accountId, adapter);
         } catch (error: any) {
-            // If it's an auth error, try refreshing once
-            const isAuthError = error.message.includes('401') ||
-                error.message.includes('unauthorized') ||
-                error.message.includes('Auth') ||
-                error.message.includes('token');
+            const msg = (error.message || '').toLowerCase();
 
-            if (isAuthError) {
-                console.log(`Auth error detected during sync for ${accountId}, attempting forced refresh...`);
-                await this.refreshTokensIfNeeded(accountId, true); // true = force
+            // Cursor/pagination errors — the stored syncCursor (e.g. Gmail pageToken) is
+            // stale or invalid. Clear it and retry from scratch; token refresh won't help.
+            const isCursorError =
+                msg.includes('pagetoken') ||
+                msg.includes('page token') ||
+                msg.includes('invalid_page');
 
-                // Get fresh adapter with new tokens
+            if (isCursorError) {
+                console.log(`Cursor error for account ${accountId}, resetting syncCursor and retrying: ${error.message}`);
+                await prisma.account.update({
+                    where: { id: accountId },
+                    data: { syncCursor: null },
+                });
                 await adapter.disconnect();
-                const newAdapter = await this.getAdapterForAccount(accountId);
+                const freshAdapter = await this.getAdapterForAccount(accountId);
                 try {
-                    return await this.performSync(accountId, newAdapter);
+                    return await this.performSync(accountId, freshAdapter);
                 } finally {
-                    await newAdapter.disconnect();
+                    await freshAdapter.disconnect();
                 }
             }
+
+            // Auth errors — try forcing a token refresh once, then retry
+            const isAuthError =
+                msg.includes('401') ||
+                msg.includes('unauthorized') ||
+                msg.includes('authentication') ||
+                msg.includes('invalid_client') ||
+                msg.includes('invalid_grant') ||
+                msg.includes('token') ||
+                msg.includes('credentials rejected') ||
+                msg.includes('invalid credentials');
+
+            if (isAuthError) {
+                console.log(`Auth error for account ${accountId}, forcing token refresh: ${error.message}`);
+                await this.refreshTokensIfNeeded(accountId, true);
+                await adapter.disconnect();
+                const freshAdapter = await this.getAdapterForAccount(accountId);
+                try {
+                    return await this.performSync(accountId, freshAdapter);
+                } finally {
+                    await freshAdapter.disconnect();
+                }
+            }
+
             throw error;
         } finally {
             await adapter.disconnect();
