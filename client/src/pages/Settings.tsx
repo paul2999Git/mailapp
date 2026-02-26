@@ -562,7 +562,7 @@ Respond exactly in this JSON format:
                                     <div className="overflow-hidden">
                                         <div style={{ fontWeight: 500, fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{acc.emailAddress}</div>
                                         <div className="text-sm text-muted" style={{ fontSize: '11px' }}>
-                                            {acc.lastSyncAt ? `Last sync: ${new Date(acc.lastSyncAt).toLocaleTimeString()}` : 'Never synced'}
+                                            {acc.lastSyncAt ? `Last sync: ${new Date(acc.lastSyncAt).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })} ET` : 'Never synced'}
                                         </div>
                                     </div>
                                 </div>
