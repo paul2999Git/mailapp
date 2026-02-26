@@ -305,13 +305,82 @@ export class AccountSyncService {
                     },
                 });
 
-                // Trigger AI classification
-                await classificationQueue.add('classify-message', {
-                    messageId: newMessage.id
-                }, {
-                    removeOnComplete: true,
-                    removeOnFail: 1000,
-                });
+                // Check for learned rules BEFORE queuing AI classification
+                // This uses the already-open adapter to reliably move the email on the provider
+                let ruleApplied = false;
+                try {
+                    const fromEmail = msg.from.email.toLowerCase();
+                    const fromDomain = fromEmail.split('@')[1];
+
+                    const learnedRule = await prisma.learnedRule.findFirst({
+                        where: {
+                            userId: account.userId,
+                            matchType: { in: ['sender_email', 'sender_domain'] },
+                            matchValue: { in: [fromEmail, fromDomain].filter(Boolean) },
+                        },
+                        include: {
+                            targetCategory: true,
+                            targetFolder: true,
+                        },
+                        orderBy: { priority: 'desc' },
+                    });
+
+                    if (learnedRule) {
+                        console.log(`📋 Rule matched for message ${newMessage.id} (${learnedRule.matchType}: ${learnedRule.matchValue})`);
+                        const updateData: any = { aiConfidence: 1.0 };
+
+                        let targetFolderToMove: { id: string; providerFolderId: string; name: string } | null = null;
+
+                        if (learnedRule.targetFolder) {
+                            targetFolderToMove = learnedRule.targetFolder;
+                        }
+
+                        if (learnedRule.targetCategory) {
+                            updateData.aiCategory = learnedRule.targetCategory.name;
+                            // If no explicit folder, try category name match
+                            if (!targetFolderToMove) {
+                                const matchedFolder = await prisma.folder.findFirst({
+                                    where: {
+                                        accountId,
+                                        name: { equals: updateData.aiCategory, mode: 'insensitive' },
+                                    },
+                                });
+                                if (matchedFolder) targetFolderToMove = matchedFolder;
+                            }
+                        }
+
+                        if (targetFolderToMove && targetFolderToMove.id !== currentFolderId) {
+                            console.log(`📦 Rule: Moving message ${newMessage.providerMessageId} to folder "${targetFolderToMove.name}"`);
+                            try {
+                                await adapter.moveToFolder(newMessage.providerMessageId, targetFolderToMove.providerFolderId);
+                                updateData.currentFolderId = targetFolderToMove.id;
+                                console.log(`✅ Rule: Moved message ${newMessage.id} to ${targetFolderToMove.name}`);
+                            } catch (moveErr: any) {
+                                console.error(`❌ Rule: Failed to move message ${newMessage.id}:`, moveErr.message);
+                            }
+                        }
+
+                        await prisma.message.update({ where: { id: newMessage.id }, data: updateData });
+                        await prisma.learnedRule.update({
+                            where: { id: learnedRule.id },
+                            data: { timesApplied: { increment: 1 }, lastAppliedAt: new Date() },
+                        });
+
+                        ruleApplied = true;
+                    }
+                } catch (ruleErr: any) {
+                    console.error(`❌ Rule check failed for message ${newMessage.id}:`, ruleErr.message);
+                }
+
+                // Only queue AI classification if no rule was applied
+                if (!ruleApplied) {
+                    await classificationQueue.add('classify-message', {
+                        messageId: newMessage.id
+                    }, {
+                        removeOnComplete: true,
+                        removeOnFail: 1000,
+                    });
+                }
 
                 // Update thread stats AFTER creating message to include it in counts
                 const { updateThreadStats } = await import('./threadHelper.js');
