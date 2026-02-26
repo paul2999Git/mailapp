@@ -311,6 +311,7 @@ export default function Inbox() {
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message?: MessageItem; thread?: ThreadItem } | null>(null);
     const [showBatchMoveMenu, setShowBatchMoveMenu] = useState(false);
     const [showBatchCategoryMenu, setShowBatchCategoryMenu] = useState(false);
+    const [makePermanent, setMakePermanent] = useState(false);
 
     const createFolderMutation = useMutation({
         mutationFn: ({ accountId, name }: { accountId: string, name: string }) =>
@@ -425,14 +426,27 @@ export default function Inbox() {
                                         right: 0,
                                         top: '100%',
                                         zIndex: 100,
-                                        minWidth: 200,
+                                        minWidth: 220,
                                         padding: 'var(--space-2)',
                                         marginTop: 'var(--space-1)',
                                         boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
                                         border: '1px solid var(--color-border)',
-                                        maxHeight: 300,
+                                        maxHeight: 360,
                                         overflowY: 'auto'
                                     }}>
+                                        <div style={{ padding: 'var(--space-2) var(--space-3)', borderBottom: '1px solid var(--color-border)', marginBottom: 'var(--space-1)' }}>
+                                            <label className="flex items-center gap-2 text-sm" style={{ cursor: 'pointer', userSelect: 'none' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={makePermanent}
+                                                    onChange={(e) => setMakePermanent(e.target.checked)}
+                                                />
+                                                <span>
+                                                    Apply to all emails from this sender
+                                                    {makePermanent && <span style={{ display: 'block', fontSize: '10px', color: 'var(--color-text-muted)', opacity: 0.75 }}>Existing inbox emails will also be moved</span>}
+                                                </span>
+                                            </label>
+                                        </div>
                                         {allFolders
                                             .filter((f: any) => f.accountId === Array.from(selectedAccountIds)[0])
                                             .map((f: any) => (
@@ -464,14 +478,27 @@ export default function Inbox() {
                                         right: 0,
                                         top: '100%',
                                         zIndex: 100,
-                                        minWidth: 200,
+                                        minWidth: 220,
                                         padding: 'var(--space-2)',
                                         marginTop: 'var(--space-1)',
                                         boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
                                         border: '1px solid var(--color-border)',
-                                        maxHeight: 300,
+                                        maxHeight: 360,
                                         overflowY: 'auto'
                                     }}>
+                                        <div style={{ padding: 'var(--space-2) var(--space-3)', borderBottom: '1px solid var(--color-border)', marginBottom: 'var(--space-1)' }}>
+                                            <label className="flex items-center gap-2 text-sm" style={{ cursor: 'pointer', userSelect: 'none' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={makePermanent}
+                                                    onChange={(e) => setMakePermanent(e.target.checked)}
+                                                />
+                                                <span>
+                                                    Apply to all emails from this sender
+                                                    {makePermanent && <span style={{ display: 'block', fontSize: '10px', color: 'var(--color-text-muted)', opacity: 0.75 }}>Existing inbox emails will also be moved</span>}
+                                                </span>
+                                            </label>
+                                        </div>
                                         {[...categories]
                                             .sort((a: any, b: any) => a.name.localeCompare(b.name))
                                             .map((c: any) => (
@@ -480,9 +507,26 @@ export default function Inbox() {
                                                     className="nav-item"
                                                     style={{ width: '100%', border: 'none', background: 'none', padding: 'var(--space-2) var(--space-3)', cursor: 'pointer', borderRadius: 'var(--radius-md)', textAlign: 'left' }}
                                                     onClick={() => {
-                                                        batchMutation.mutate({ ids: Array.from(selectedIds), action: 'categorize', data: { categoryId: c.id } });
+                                                        const ids = Array.from(selectedIds);
+                                                        if (makePermanent && ids.length === 1) {
+                                                            // Single item + makePermanent: use overrideMutation to create a sender rule
+                                                            const messageId = isConversationView
+                                                                ? threads.find(t => t.id === ids[0])?.messages[0]?.id
+                                                                : ids[0];
+                                                            if (messageId) {
+                                                                overrideMutation.mutate({
+                                                                    messageId,
+                                                                    newCategoryId: c.id,
+                                                                    makePermanent: true,
+                                                                    applyToSender: true,
+                                                                });
+                                                            }
+                                                        } else {
+                                                            batchMutation.mutate({ ids, action: 'categorize', data: { categoryId: c.id } });
+                                                        }
                                                         setShowBatchCategoryMenu(false);
                                                     }}
+                                                    disabled={overrideMutation.isPending || batchMutation.isPending}
                                                 >
                                                     <span>🏷️ {c.name}</span>
                                                 </button>
