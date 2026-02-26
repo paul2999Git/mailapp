@@ -174,6 +174,19 @@ export default function Settings() {
         }
     });
 
+    const syncProviderMovesMutation = useMutation({
+        mutationFn: () => apiRequest<any>('POST', '/classification/sync-provider-moves'),
+        onSuccess: (data: any) => {
+            setConfirmToast({
+                open: true,
+                title: 'Provider Sync Started',
+                description: `Syncing ${data.queued} categorized messages to their provider folders. This runs in the background.`,
+                actionLabel: 'OK',
+                onConfirm: () => setConfirmToast(prev => ({ ...prev, open: false }))
+            });
+        }
+    });
+
     const { data: rules, refetch: refetchRules } = useQuery({
         queryKey: ['rules'],
         queryFn: () => apiRequest<any[]>('GET', '/classification/rules'),
@@ -530,6 +543,20 @@ Respond exactly in this JSON format:
                                     {bulkClassifyMutation.isPending ? 'Queuing...' : 'Run Now'}
                                 </button>
                             </div>
+                        </div>
+
+                        <div className="flex items-center justify-between" style={{ marginBottom: 'var(--space-4)' }}>
+                            <div>
+                                <div style={{ fontWeight: 500 }}>Sync Provider Folders</div>
+                                <div className="text-sm text-muted">Move all categorized messages to their matching folders on Gmail/IMAP. Use this if emails are categorized in MailHub but still appear in your provider's inbox.</div>
+                            </div>
+                            <button
+                                className="btn btn-secondary"
+                                onClick={() => syncProviderMovesMutation.mutate()}
+                                disabled={syncProviderMovesMutation.isPending}
+                            >
+                                {syncProviderMovesMutation.isPending ? 'Starting...' : 'Sync Now'}
+                            </button>
                         </div>
                     </div>
                 </div>

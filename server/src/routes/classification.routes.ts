@@ -601,6 +601,39 @@ router.post('/empty-trash', async (req: Request, res: Response, next: NextFuncti
     }
 });
 
+// POST /api/classification/sync-provider-moves - Move all categorized messages to matching provider folders
+router.post('/sync-provider-moves', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const userId = authReq.user!.id;
+
+        // Find all categorized, visible messages that belong to this user
+        const messages = await prisma.message.findMany({
+            where: {
+                account: { userId },
+                aiCategory: { not: null },
+                isHidden: false,
+                neverShow: false,
+            },
+            select: { id: true, aiCategory: true },
+        });
+
+        // Fire off provider moves in background — moveMessageOnProvider skips messages
+        // that are already in the correct folder, so this is safe to run on all of them.
+        let queued = 0;
+        for (const msg of messages) {
+            classificationService.moveMessageOnProvider(msg.id, msg.aiCategory!).catch(err => {
+                console.error(`sync-provider-moves: failed for message ${msg.id}:`, err.message);
+            });
+            queued++;
+        }
+
+        res.json({ success: true, data: { queued } });
+    } catch (error) {
+        next(error);
+    }
+});
+
 // POST /api/classification/categories/:id/mark-read - Mark all messages in category as read
 router.post('/categories/:id/mark-read', async (req: Request, res: Response, next: NextFunction) => {
     try {
