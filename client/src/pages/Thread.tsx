@@ -337,7 +337,10 @@ export default function Thread() {
                                                         checked={makePermanent}
                                                         onChange={(e) => setMakePermanent(e.target.checked)}
                                                     />
-                                                    Always for this sender
+                                                    <span>
+                                                        Apply to all emails from this sender
+                                                        {makePermanent && <span style={{ display: 'block', fontSize: '10px', color: 'var(--color-text-muted)', opacity: 0.75 }}>Existing inbox emails will also be moved</span>}
+                                                    </span>
                                                 </label>
                                             </div>
                                             <div style={{ maxHeight: 400, overflowY: 'auto' }}>

@@ -485,7 +485,7 @@ Respond exactly in this JSON format:
                                             </>
                                         )}
                                     </span>
-                                    <span className="text-sm text-muted">{stats.classified} / {stats.total} classified</span>
+                                    <span className="text-sm text-muted">{stats.classified} / {stats.total} messages categorized</span>
                                 </div>
                                 <div style={{ height: 8, background: 'var(--color-bg-primary)', borderRadius: 4, overflow: 'hidden' }}>
                                     <div style={{
@@ -497,7 +497,9 @@ Respond exactly in this JSON format:
                                 </div>
                                 {!justFinished && (
                                     <div className="text-xs text-muted" style={{ marginTop: 'var(--space-2)' }}>
-                                        {stats.queue.waiting} waiting, {stats.queue.active} currently processing...
+                                        {stats.unclassified} messages still need a category
+                                        {stats.queue.waiting > 0 && ` · ${stats.queue.waiting} AI jobs queued`}
+                                        {stats.queue.active > 0 && ` · ${stats.queue.active} running now`}
                                     </div>
                                 )}
                             </div>

@@ -148,7 +148,8 @@ router.post('/override', async (req: Request, res: Response, next: NextFunction)
             });
         }
 
-        // Create learned rule if permanent
+        // Create learned rule and apply retroactively if permanent
+        let backfilledCount = 0;
         if (makePermanent && message.fromAddress) {
             const matchType = applyToDomain ? 'sender_domain' : 'sender_email';
             const matchValue = applyToDomain
@@ -179,11 +180,46 @@ router.post('/override', async (req: Request, res: Response, next: NextFunction)
                     lastAppliedAt: new Date(),
                 },
             });
+
+            // Apply retroactively to all existing messages from this sender/domain
+            if (category) {
+                const senderFilter = applyToDomain
+                    ? { fromAddress: { endsWith: `@${matchValue}`, mode: 'insensitive' as const } }
+                    : { fromAddress: { equals: matchValue, mode: 'insensitive' as const } };
+
+                const existingMessages = await prisma.message.findMany({
+                    where: {
+                        id: { not: messageId },
+                        account: { userId: authReq.user!.id },
+                        isHidden: false,
+                        neverShow: false,
+                        ...senderFilter,
+                    },
+                    select: { id: true },
+                });
+
+                if (existingMessages.length > 0) {
+                    await prisma.message.updateMany({
+                        where: { id: { in: existingMessages.map(m => m.id) } },
+                        data: { aiCategory: category.name },
+                    });
+                    backfilledCount = existingMessages.length;
+
+                    // Move each message on provider in background (fire-and-forget)
+                    for (const msg of existingMessages) {
+                        classificationService.moveMessageOnProvider(msg.id, category.name).catch(err => {
+                            console.error(`Backfill provider move failed for message ${msg.id}:`, err.message);
+                        });
+                    }
+
+                    console.log(`Backfilled ${backfilledCount} existing messages to "${category.name}" for rule on ${matchValue}`);
+                }
+            }
         }
 
         res.json({
             success: true,
-            data: override,
+            data: { ...override, backfilledCount },
         });
     } catch (error) {
         next(error);
