@@ -80,6 +80,13 @@ ANALYSIS INSTRUCTIONS:
 3. Choose the most appropriate category ID from the list above.
 4. If you are uncertain (confidence < 0.7), flag it for human review.
 
+FINANCIAL EMAIL GUIDANCE (apply in order):
+- If from a bank or credit card company AND the email is about an existing account (alert, statement, transaction, fraud notice, balance) → Banking - Critical
+- If from a bank or credit card company AND the email is promotional, selling a product, or marketing → Banking - Marketing
+- If the email is a bill, invoice, payment reminder, or says money is owed or due → Bills Due
+- If the email is a purchase receipt, order confirmation, or shipping update → Receipts
+- If the email is a newsletter or subscription digest that does not fit the above → Newsletters
+
 RESPONSE FORMAT:
 Respond exactly in this JSON format:
 {
