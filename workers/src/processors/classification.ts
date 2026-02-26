@@ -250,6 +250,36 @@ async function applyLearnedRule(
                 await adapter.disconnect();
             }
         }
+    } else if (rule.targetCategoryId && updateData.aiCategory) {
+        // Rule sets a category but no explicit folder — try name-based folder match
+        // (same logic as AI classification path)
+        try {
+            const folder = await prisma.folder.findFirst({
+                where: {
+                    accountId: message.accountId,
+                    name: { equals: updateData.aiCategory, mode: 'insensitive' },
+                },
+            });
+
+            if (folder && folder.id !== message.currentFolderId) {
+                console.log(`📦 Rule (category-based): Moving message ${message.providerMessageId} to folder "${folder.name}"`);
+                const { AccountSyncService } = await import('../../../server/src/services/accountSync.service.js');
+                const syncService = new AccountSyncService();
+                const adapter = await syncService.getAdapterForAccount(message.accountId);
+
+                try {
+                    await adapter.moveToFolder(message.providerMessageId, folder.providerFolderId);
+                    updateData.currentFolderId = folder.id;
+                    console.log(`✅ Successfully moved message ${message.id} by category-name match`);
+                } catch (moveError: any) {
+                    console.error(`❌ Failed to move message ${message.id} by category-name match:`, moveError.message);
+                } finally {
+                    await adapter.disconnect();
+                }
+            }
+        } catch (error: any) {
+            console.error(`❌ Error during category-based folder move:`, error.message);
+        }
     }
 
     await prisma.message.update({

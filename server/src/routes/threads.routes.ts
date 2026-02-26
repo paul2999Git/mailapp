@@ -169,7 +169,7 @@ router.post('/batch', async (req: Request, res: Response, next: NextFunction) =>
             throw errors.badRequest('threadIds must be a non-empty array');
         }
 
-        // Verify ownership and get messages for these threads
+        // Verify ownership and get messages for these threads (exclude hidden/deleted messages)
         const threads = await prisma.thread.findMany({
             where: {
                 id: { in: threadIds },
@@ -177,6 +177,7 @@ router.post('/batch', async (req: Request, res: Response, next: NextFunction) =>
             },
             include: {
                 messages: {
+                    where: { isHidden: false },
                     select: {
                         id: true,
                         accountId: true,

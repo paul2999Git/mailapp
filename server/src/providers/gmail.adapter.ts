@@ -400,12 +400,16 @@ export class GmailAdapter implements IProviderAdapter {
         // Map our virtual folder ID back to Gmail's system label
         const gmailLabelId = folderId === 'NOTIFICATIONS' ? 'CATEGORY_UPDATES' : folderId;
 
+        // When moving to a custom label, remove INBOX and all category labels
+        // so the message doesn't linger in inbox tabs on the provider
+        const removeLabels = ['INBOX', 'CATEGORY_UPDATES', 'CATEGORY_PROMOTIONS', 'CATEGORY_SOCIAL', 'CATEGORY_FORUMS'];
+
         await this.gmail.users.messages.modify({
             userId: 'me',
             id: providerMessageId,
             requestBody: {
                 addLabelIds: [gmailLabelId],
-                removeLabelIds: ['INBOX'],
+                removeLabelIds: removeLabels.filter(l => l !== gmailLabelId),
             },
         });
     }

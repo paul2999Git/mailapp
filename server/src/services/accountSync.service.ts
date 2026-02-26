@@ -183,10 +183,10 @@ export class AccountSyncService {
             });
 
             if (existing) {
-                // If the message was updated very recently (e.g. within last 2 minutes),
-                // it might be because of a local action that hasn't synced to provider yet.
-                // We should avoid overwriting isRead, isStarred, and currentFolderId if the local updated timestamp is recent.
-                const recentThreshold = 2 * 60 * 1000; // 2 minutes
+                // If the message was updated very recently (e.g. within last 30 minutes),
+                // it might be because of a local action (manual move, categorize) that hasn't
+                // fully propagated to the provider yet. Avoid overwriting local changes.
+                const recentThreshold = 30 * 60 * 1000; // 30 minutes
                 const isRecent = (Date.now() - existing.updatedAt.getTime()) < recentThreshold;
 
                 if (!isRecent || !existing.currentFolderId) {

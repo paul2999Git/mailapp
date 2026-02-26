@@ -336,7 +336,11 @@ router.post('/batch', async (req: Request, res: Response, next: NextFunction) =>
                     const adapter = await accountSyncService.getAdapterForAccount(accountId);
                     try {
                         for (const msg of messages) {
-                            await adapter.moveToFolder(msg.providerMessageId, targetFolder.providerFolderId);
+                            try {
+                                await adapter.moveToFolder(msg.providerMessageId, targetFolder.providerFolderId);
+                            } catch (err) {
+                                console.error(`Failed to move message ${msg.providerMessageId} to folder on provider:`, err);
+                            }
                         }
                     } finally {
                         await adapter.disconnect();
