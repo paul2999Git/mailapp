@@ -121,6 +121,7 @@ export default function Inbox() {
         onSettled: () => {
             queryClient.invalidateQueries({ queryKey: ['messages'] });
             queryClient.invalidateQueries({ queryKey: ['threads'] });
+            queryClient.invalidateQueries({ queryKey: ['categories'] });
         },
     });
 
@@ -152,6 +153,8 @@ export default function Inbox() {
             aid ? apiRequest('POST', `/accounts/${aid}/sync`) : Promise.all(accounts.map((a: any) => apiRequest('POST', `/accounts/${a.id}/sync`))),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['messages'] });
+            queryClient.invalidateQueries({ queryKey: ['threads'] });
+            queryClient.invalidateQueries({ queryKey: ['categories'] });
         },
     });
 
@@ -221,6 +224,7 @@ export default function Inbox() {
         onSettled: () => {
             queryClient.invalidateQueries({ queryKey: ['messages'] });
             queryClient.invalidateQueries({ queryKey: ['threads'] });
+            queryClient.invalidateQueries({ queryKey: ['categories'] });
             setSelectedIds(new Set());
         },
     });

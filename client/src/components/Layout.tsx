@@ -44,7 +44,7 @@ export default function Layout() {
     const { data: categories = [], isLoading: loadingCats } = useQuery({
         queryKey: ['categories'],
         queryFn: () => apiRequest<ICategory[]>('GET', '/classification/categories'),
-        refetchInterval: 30000, // Refresh counts every 30s
+        refetchInterval: 10000, // Refresh counts every 10s so unread badges stay current
     });
 
     const { data: accounts = [], isLoading: loadingAccs } = useQuery({
