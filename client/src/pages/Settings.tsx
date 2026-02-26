@@ -296,6 +296,7 @@ Respond exactly in this JSON format:
 
     const [addingAccount, setAddingAccount] = useState(false);
     const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
+    const [expiredAuthAccounts, setExpiredAuthAccounts] = useState<Set<string>>(new Set());
     const [imapDetails, setImapDetails] = useState({
         emailAddress: '',
         imapHost: '',
@@ -359,11 +360,24 @@ Respond exactly in this JSON format:
     const handleSyncNow = async (id: string) => {
         try {
             await apiRequest('POST', `/accounts/${id}/sync`);
+            setExpiredAuthAccounts(prev => { const next = new Set(prev); next.delete(id); return next; });
             await refetchAccounts();
         } catch (error: any) {
+            const code = error.response?.data?.error?.code || '';
             const message = error.response?.data?.error?.message || error.message || 'Sync failed';
-            alert(`Sync Failed: ${message}`);
+            if (code === 'AUTH_EXPIRED' || message.includes('authentication has expired')) {
+                setExpiredAuthAccounts(prev => new Set([...prev, id]));
+            } else {
+                alert(`Sync Failed: ${message}`);
+            }
         }
+    };
+
+    const handleReconnectOAuth = async (provider: 'gmail' | 'zoho') => {
+        if (!user) return;
+        const endpoint = provider === 'gmail' ? 'google' : 'zoho';
+        const { url } = await apiRequest<{ url: string }>('GET', `/oauth/${endpoint}/url?userId=${user.id}`);
+        window.location.href = url;
     };
 
 
@@ -553,8 +567,11 @@ Respond exactly in this JSON format:
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 'var(--space-3)' }}>
-                        {accounts?.map(acc => (
-                            <div key={acc.id} className="card flex justify-between items-center hover-trigger" style={{ padding: 'var(--space-2) var(--space-4)', background: 'var(--color-bg-tertiary)', minHeight: '64px', border: '1px solid var(--color-border)' }}>
+                        {accounts?.map(acc => {
+                            const isExpired = expiredAuthAccounts.has(acc.id);
+                            const isOAuth = acc.provider === 'gmail' || acc.provider === 'zoho';
+                            return (
+                            <div key={acc.id} className="card flex justify-between items-center hover-trigger" style={{ padding: 'var(--space-2) var(--space-4)', background: 'var(--color-bg-tertiary)', minHeight: '64px', border: `1px solid ${isExpired ? 'var(--color-danger)' : 'var(--color-border)'}` }}>
                                 <div className="flex items-center gap-3 overflow-hidden" style={{ flex: 1 }}>
                                     <span style={{ fontSize: '18px', flexShrink: 0 }}>
                                         {acc.provider === 'gmail' ? '🇬' : acc.provider === 'zoho' ? '🇿' : acc.provider === 'proton' ? '🇵' : acc.provider === 'hover' ? '🇭' : '📧'}
@@ -562,16 +579,29 @@ Respond exactly in this JSON format:
                                     <div className="overflow-hidden">
                                         <div style={{ fontWeight: 500, fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{acc.emailAddress}</div>
                                         <div className="text-sm text-muted" style={{ fontSize: '11px' }}>
-                                            {acc.lastSyncAt ? `Last sync: ${new Date(acc.lastSyncAt).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })} ET` : 'Never synced'}
+                                            {isExpired
+                                                ? <span style={{ color: 'var(--color-danger)' }}>Auth expired — reconnect required</span>
+                                                : acc.lastSyncAt ? `Last sync: ${new Date(acc.lastSyncAt).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })} ET` : 'Never synced'}
                                         </div>
                                     </div>
                                 </div>
                                 <div className="flex gap-1 flex-shrink-0">
+                                    {isExpired && isOAuth && (
+                                        <button
+                                            className="btn btn-sm"
+                                            style={{ background: 'var(--color-danger)', color: '#fff', fontSize: '11px' }}
+                                            onClick={() => handleReconnectOAuth(acc.provider as 'gmail' | 'zoho')}
+                                            title="Reconnect account"
+                                        >
+                                            Reconnect
+                                        </button>
+                                    )}
                                     <button className="btn btn-ghost btn-sm" title="Sync Now" onClick={() => handleSyncNow(acc.id)}>🔄</button>
                                     <button className="btn btn-ghost btn-sm" title="Disconnect" style={{ color: 'var(--color-danger)' }} onClick={() => handleDisconnect(acc.id)}>🗑️</button>
                                 </div>
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
 
                     {/* Provider Selection Modal */}

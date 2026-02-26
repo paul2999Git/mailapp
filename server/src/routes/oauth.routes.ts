@@ -102,13 +102,14 @@ router.get('/google/callback', async (req: Request, res: Response, next: NextFun
         });
 
         if (existingAccount) {
-            // Update existing account with new tokens
+            // Update existing account with new tokens, and clear any stale syncCursor
             await prisma.account.update({
                 where: { id: existingAccount.id },
                 data: {
                     accessTokenEncrypted: encrypt(tokens.access_token),
                     refreshTokenEncrypted: encrypt(tokens.refresh_token),
                     tokenExpiresAt: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
+                    syncCursor: null,
                 },
             });
         } else {

@@ -269,12 +269,11 @@ router.post('/:id/sync', async (req: Request, res: Response, next: NextFunction)
         });
     } catch (error: any) {
         console.error(`Sync failed for account ${req.params.id}:`, error);
-        res.status(500).json({
+        res.status(error.statusCode || 500).json({
             success: false,
             error: {
-                code: 'SYNC_FAILED',
+                code: error.code || 'SYNC_FAILED',
                 message: error.message || 'Sync failed',
-                stack: error.stack,
             },
         });
     }

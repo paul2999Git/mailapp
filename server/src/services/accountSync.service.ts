@@ -116,6 +116,25 @@ export class AccountSyncService {
                 const freshAdapter = await this.getAdapterForAccount(accountId);
                 try {
                     return await this.performSync(accountId, freshAdapter);
+                } catch (retryError: any) {
+                    const retryMsg = (retryError.message || '').toLowerCase();
+                    const isStillAuthError =
+                        retryMsg.includes('invalid_grant') ||
+                        retryMsg.includes('invalid_client') ||
+                        retryMsg.includes('invalid credentials') ||
+                        retryMsg.includes('credentials rejected') ||
+                        retryMsg.includes('authentication') ||
+                        retryMsg.includes('unauthorized');
+
+                    if (isStillAuthError) {
+                        const authExpiredError = new Error(
+                            'Account authentication has expired. Please reconnect this email account.'
+                        ) as any;
+                        authExpiredError.statusCode = 422;
+                        authExpiredError.code = 'AUTH_EXPIRED';
+                        throw authExpiredError;
+                    }
+                    throw retryError;
                 } finally {
                     await freshAdapter.disconnect();
                 }
