@@ -62,12 +62,12 @@ export const classificationQueue = new Queue(QUEUE_NAMES.CLASSIFICATION, { conne
 // The job ticks every minute; each account is only actually synced
 // if enough time has passed since its last sync (per user's syncIntervalMinutes setting).
 async function setupRecurringJobs() {
-    // Remove legacy hourly-sync job if it still exists in Redis
+    // Remove old repeatable jobs (hourly-sync, and any periodic-sync using old `every` key)
     const existing = await syncQueue.getRepeatableJobs();
     for (const job of existing) {
-        if (job.name === 'hourly-sync') {
+        if (job.name === 'hourly-sync' || job.name === 'periodic-sync') {
             await syncQueue.removeRepeatableByKey(job.key);
-            console.log('🗑️ Removed legacy hourly-sync job');
+            console.log(`🗑️ Removed old job: ${job.name} (${job.key})`);
         }
     }
 
@@ -76,13 +76,14 @@ async function setupRecurringJobs() {
         { type: 'all-accounts' },
         {
             repeat: {
-                every: 60 * 1000, // tick every 1 minute; per-account throttle is in the processor
+                cron: '* * * * *', // Fire at the top of every wall-clock minute
+                // Using cron instead of `every` so worker restarts don't reset the timer
             },
             removeOnComplete: 100,
             removeOnFail: 50,
         }
     );
-    console.log('📅 Scheduled periodic sync job (1-minute tick, per-user interval enforced in processor)');
+    console.log('📅 Scheduled periodic sync job (cron: every minute, per-user interval enforced in processor)');
 }
 
 setupRecurringJobs().catch(console.error);

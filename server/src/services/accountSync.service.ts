@@ -210,6 +210,9 @@ export class AccountSyncService {
         });
 
         const folderMap = new Map(accountFolders.map(f => [f.providerFolderId, f.id]));
+        // Virtual folders (e.g. NOTIFICATIONS) are system-managed; messages stuck there
+        // should always be re-routed when the provider says otherwise — bypass recency check.
+        const notificationsFolderId = accountFolders.find(f => f.providerFolderId === 'NOTIFICATIONS')?.id;
 
         // Sync messages - only past 14 days
         const fourteenDaysAgo = new Date();
@@ -235,8 +238,11 @@ export class AccountSyncService {
                 // fully propagated to the provider yet. Avoid overwriting local changes.
                 const recentThreshold = 30 * 60 * 1000; // 30 minutes
                 const isRecent = (Date.now() - existing.updatedAt.getTime()) < recentThreshold;
+                // Always re-route messages in virtual/system folders (NOTIFICATIONS) since
+                // those don't exist on the provider and can't represent a user move.
+                const isInVirtualFolder = notificationsFolderId != null && existing.currentFolderId === notificationsFolderId;
 
-                if (!isRecent || !existing.currentFolderId) {
+                if (!isRecent || !existing.currentFolderId || isInVirtualFolder) {
                     await prisma.message.update({
                         where: { id: existing.id },
                         data: {

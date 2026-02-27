@@ -76,17 +76,6 @@ export class GmailAdapter implements IProviderAdapter {
             });
         }
 
-        // Add virtual "Notifications" folder
-        folders.push({
-            providerFolderId: 'NOTIFICATIONS',
-            name: 'Notifications',
-            fullPath: 'Notifications',
-            folderType: 'custom',
-            isSystem: true,
-            messageCount: 0,
-            unreadCount: 0,
-        });
-
         return folders;
     }
 
@@ -242,7 +231,7 @@ export class GmailAdapter implements IProviderAdapter {
             isDraft,
 
             providerLabels: labels,
-            folderId: labels.includes('CATEGORY_UPDATES') ? 'NOTIFICATIONS' : (labels.includes('INBOX') ? 'INBOX' : (labels[0] || null)),
+            folderId: labels.includes('INBOX') ? 'INBOX' : (labels[0] || null),
         };
     }
 

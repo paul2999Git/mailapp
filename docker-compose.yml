@@ -13,5 +13,6 @@ services:
       retries: 3
     restart: unless-stopped
 
+
 volumes:
   redis_data:
