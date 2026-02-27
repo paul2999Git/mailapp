@@ -527,9 +527,9 @@ export class ImapAdapter implements IProviderAdapter {
  */
 export class ProtonAdapter extends ImapAdapter {
     constructor(accountId: string, config: ImapConfig) {
-        // Proton Bridge defaults: 127.0.0.1:1143, no TLS (STARTTLS via imapflow)
-        // Legacy: if port 993 was stored (old default), correct to 1143
-        const port = config.port === 993 ? 1143 : (config.port || 1143);
+        // Proton Bridge defaults: 127.0.0.1:1144, no TLS (STARTTLS via imapflow)
+        // Legacy: if port 993 was stored (old default), correct to 1144
+        const port = config.port === 993 ? 1144 : (config.port || 1144);
         const protonConfig: ImapConfig = {
             ...config,
             host: config.host || '127.0.0.1',

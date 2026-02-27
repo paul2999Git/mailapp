@@ -374,7 +374,7 @@ Respond exactly in this JSON format:
         setEditingAccount({ id: acc.id, provider: acc.provider, emailAddress: acc.emailAddress });
         setEditCredentials({
             imapHost: '127.0.0.1',
-            imapPort: acc.provider === 'proton' ? 1143 : 993,
+            imapPort: acc.provider === 'proton' ? 1144 : 993,
             imapUsername: acc.emailAddress,
             imapPassword: '',
         });
@@ -681,7 +681,7 @@ Respond exactly in this JSON format:
                                 <div className="flex flex-col gap-2">
                                     <button className="btn btn-secondary w-full text-left justify-start" onClick={handleAddAccountGoogle}>🇬 Google / Gmail</button>
                                     <button className="btn btn-secondary w-full text-left justify-start" onClick={handleAddAccountZoho}>🇿 Zoho Mail</button>
-                                    <button className="btn btn-secondary w-full text-left justify-start" onClick={() => { setImapDetails({ emailAddress: '', imapHost: '127.0.0.1', imapPort: 1143, imapUsername: '', imapPassword: '', provider: 'proton' }); setAddAccountError(null); setSelectedProvider('imap-proton'); }}>📧 Proton Mail (via Bridge)</button>
+                                    <button className="btn btn-secondary w-full text-left justify-start" onClick={() => { setImapDetails({ emailAddress: '', imapHost: '127.0.0.1', imapPort: 1144, imapUsername: '', imapPassword: '', provider: 'proton' }); setAddAccountError(null); setSelectedProvider('imap-proton'); }}>📧 Proton Mail (via Bridge)</button>
                                     <button className="btn btn-secondary w-full text-left justify-start" onClick={() => { setImapDetails({ emailAddress: '', imapHost: 'mail.hover.com', imapPort: 993, imapUsername: '', imapPassword: '', provider: 'hover' }); setAddAccountError(null); setSelectedProvider('imap-hover'); }}>📧 Hover</button>
                                     <button className="btn btn-secondary w-full text-left justify-start" onClick={() => { setImapDetails({ emailAddress: '', imapHost: '', imapPort: 993, imapUsername: '', imapPassword: '', provider: 'imap' }); setAddAccountError(null); setSelectedProvider('imap-custom'); }}>🌐 Custom IMAP/SMTP</button>
                                     <button className="btn btn-ghost w-full mt-4" onClick={() => setSelectedProvider(null)}>Cancel</button>
@@ -720,7 +720,7 @@ Respond exactly in this JSON format:
                                     <div style={{ background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-3)', marginBottom: 'var(--space-4)', fontSize: '12px', lineHeight: 1.5 }}>
                                         <strong>Proton Bridge must be running on this server.</strong> Use the <strong>IMAP password from Bridge</strong> (not your Proton account password).
                                         Find it in Bridge → "Mailbox configuration" after logging in.
-                                        Defaults: host <code>127.0.0.1</code>, IMAP port <code>1143</code>, SMTP port <code>1025</code>.
+                                        Defaults: host <code>127.0.0.1</code>, IMAP port <code>1144</code>, SMTP port <code>1025</code>.
                                     </div>
                                 )}
 
