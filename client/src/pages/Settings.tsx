@@ -500,6 +500,25 @@ Respond exactly in this JSON format:
                         </div>
                     </div>
 
+                    <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>
+                        <label className="form-label">Sync Interval</label>
+                        <p className="text-sm text-muted" style={{ marginBottom: 'var(--space-3)' }}>
+                            How often to pull new emails from providers. Sending is always immediate.
+                        </p>
+                        <select
+                            className="form-input"
+                            value={settings?.syncIntervalMinutes || 5}
+                            onChange={(e) => updateSettings({ syncIntervalMinutes: parseInt(e.target.value) })}
+                            style={{ maxWidth: 200 }}
+                        >
+                            <option value={5}>Every 5 minutes</option>
+                            <option value={10}>Every 10 minutes</option>
+                            <option value={15}>Every 15 minutes</option>
+                            <option value={30}>Every 30 minutes</option>
+                            <option value={60}>Every hour</option>
+                        </select>
+                    </div>
+
                     <div className="form-group" style={{ marginBottom: 'var(--space-6)' }}>
                         <label className="form-label">Body Preview Characters</label>
                         <p className="text-sm text-muted" style={{ marginBottom: 'var(--space-3)' }}>

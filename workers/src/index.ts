@@ -58,20 +58,31 @@ classificationWorker.on('failed', (job, err) => {
 export const syncQueue = new Queue(QUEUE_NAMES.EMAIL_SYNC, { connection });
 export const classificationQueue = new Queue(QUEUE_NAMES.CLASSIFICATION, { connection });
 
-// Schedule recurring sync jobs (every hour)
+// Schedule recurring sync jobs
+// The job ticks every minute; each account is only actually synced
+// if enough time has passed since its last sync (per user's syncIntervalMinutes setting).
 async function setupRecurringJobs() {
+    // Remove legacy hourly-sync job if it still exists in Redis
+    const existing = await syncQueue.getRepeatableJobs();
+    for (const job of existing) {
+        if (job.name === 'hourly-sync') {
+            await syncQueue.removeRepeatableByKey(job.key);
+            console.log('🗑️ Removed legacy hourly-sync job');
+        }
+    }
+
     await syncQueue.add(
-        'hourly-sync',
+        'periodic-sync',
         { type: 'all-accounts' },
         {
             repeat: {
-                every: 60 * 60 * 1000, // 1 hour
+                every: 60 * 1000, // tick every 1 minute; per-account throttle is in the processor
             },
             removeOnComplete: 100,
             removeOnFail: 50,
         }
     );
-    console.log('📅 Scheduled hourly sync job');
+    console.log('📅 Scheduled periodic sync job (1-minute tick, per-user interval enforced in processor)');
 }
 
 setupRecurringJobs().catch(console.error);

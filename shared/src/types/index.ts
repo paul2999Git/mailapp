@@ -29,6 +29,7 @@ export interface UserSettings {
     aggressiveness: 'low' | 'medium' | 'high';
     theme?: 'light' | 'dark' | 'system';
     classificationPrompt?: string;
+    syncIntervalMinutes?: number;
 }
 
 // AI classification result

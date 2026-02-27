@@ -14,18 +14,32 @@ export async function processSyncJob(job: Job<SyncJobData>) {
     console.log(`Processing sync job: ${job.id}`, job.data);
 
     if (job.data.type === 'all-accounts') {
-        // Get all enabled accounts
+        // Get all enabled accounts with user settings for sync interval
         const accounts = await prisma.account.findMany({
             where: { isEnabled: true },
             select: {
                 id: true,
                 provider: true,
                 emailAddress: true,
+                lastSyncAt: true,
+                user: { select: { settings: true } },
             },
         });
 
+        const now = Date.now();
+
         for (const account of accounts) {
             try {
+                const userSettings = account.user.settings as Record<string, any>;
+                const intervalMinutes = Number(userSettings?.syncIntervalMinutes) || 5;
+                const intervalMs = intervalMinutes * 60 * 1000;
+
+                if (account.lastSyncAt && (now - account.lastSyncAt.getTime()) < intervalMs) {
+                    const minutesAgo = Math.round((now - account.lastSyncAt.getTime()) / 60000);
+                    console.log(`⏭️ Skipping ${account.emailAddress} — synced ${minutesAgo}m ago, interval is ${intervalMinutes}m`);
+                    continue;
+                }
+
                 await syncAccount(account.id);
             } catch (err) {
                 console.error(`⚠️ Sync failed for ${account.emailAddress} (${account.provider}), continuing with other accounts:`, err instanceof Error ? err.message : err);
