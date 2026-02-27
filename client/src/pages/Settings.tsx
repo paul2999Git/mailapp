@@ -332,6 +332,7 @@ Respond exactly in this JSON format:
     const { data: accounts, refetch: refetchAccounts } = useQuery({
         queryKey: ['accounts'],
         queryFn: () => apiRequest<any[]>('GET', '/accounts'),
+        refetchInterval: 60000, // Refresh every 60s so auto-sync updates lastSyncAt display
     });
 
     const { data: folders } = useQuery({

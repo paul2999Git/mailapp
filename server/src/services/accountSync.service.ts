@@ -218,10 +218,18 @@ export class AccountSyncService {
         const fourteenDaysAgo = new Date();
         fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
 
-        const syncResult = await adapter.syncMessages(account.syncCursor, null, fourteenDaysAgo);
+        // For Gmail, always start a fresh query (cursor = null) so the most recent messages
+        // are always fetched first. Gmail's pageToken pagination sorts newest-first, so a
+        // mid-pagination cursor will miss new arrivals that land at the top of the list.
+        // IMAP uses append-only UIDs so its cursor is safe to persist.
+        const syncCursor = account.provider === 'gmail' ? null : account.syncCursor;
+
+        const syncResult = await adapter.syncMessages(syncCursor, null, fourteenDaysAgo);
+        console.log(`📨 ${account.emailAddress}: ${syncResult.messages.length} messages returned from provider`);
 
         for (const msg of syncResult.messages) {
-            const currentFolderId = msg.folderId ? folderMap.get(msg.folderId) : null;
+            // Use ?? null to ensure undefined (folder not in map) becomes null explicitly
+            const currentFolderId = msg.folderId ? (folderMap.get(msg.folderId) ?? null) : null;
 
             const existing = await prisma.message.findUnique({
                 where: {
@@ -396,6 +404,8 @@ export class AccountSyncService {
             }
         }
 
+        console.log(`📊 ${account.emailAddress}: ${messagesNew} new, ${messagesUpdated} updated`);
+
         // Cleanup local messages
         const cleanup = await prisma.message.deleteMany({
             where: {
@@ -407,11 +417,12 @@ export class AccountSyncService {
         });
         console.log(`Cleaned up ${cleanup.count} old messages for account ${accountId}`);
 
-        // Update cursor
+        // Update cursor — Gmail always resets to null so next sync starts fresh (see above).
+        // IMAP persists the UID cursor so it only fetches new messages.
         await prisma.account.update({
             where: { id: accountId },
             data: {
-                syncCursor: syncResult.newCursor,
+                syncCursor: account.provider === 'gmail' ? null : syncResult.newCursor,
                 lastSyncAt: new Date(),
             },
         });
