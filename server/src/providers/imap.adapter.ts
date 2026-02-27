@@ -467,7 +467,7 @@ export class ImapAdapter implements IProviderAdapter {
 
         if (this.provider === 'proton') {
             smtpHost = '127.0.0.1';
-            smtpPort = 1025;
+            smtpPort = 1026;
             secure = false;
         } else if (this.provider === 'zoho') {
             smtpHost = 'smtp.zoho.com';

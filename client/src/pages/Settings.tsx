@@ -720,7 +720,7 @@ Respond exactly in this JSON format:
                                     <div style={{ background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-3)', marginBottom: 'var(--space-4)', fontSize: '12px', lineHeight: 1.5 }}>
                                         <strong>Proton Bridge must be running on this server.</strong> Use the <strong>IMAP password from Bridge</strong> (not your Proton account password).
                                         Find it in Bridge → "Mailbox configuration" after logging in.
-                                        Defaults: host <code>127.0.0.1</code>, IMAP port <code>1144</code>, SMTP port <code>1025</code>.
+                                        Defaults: host <code>127.0.0.1</code>, IMAP port <code>1144</code>, SMTP port <code>1026</code>.
                                     </div>
                                 )}
 
