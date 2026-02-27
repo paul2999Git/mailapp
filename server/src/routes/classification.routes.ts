@@ -514,13 +514,18 @@ router.get('/stats', async (req: Request, res: Response, next: NextFunction) => 
 // POST /api/classification/reset-queue - Clear failed jobs
 router.post('/reset-queue', async (req: Request, res: Response, next: NextFunction) => {
     try {
-        // Clear failed jobs
         await classificationQueue.clean(0, 1000, 'failed');
+        res.json({ success: true, data: { reset: true } });
+    } catch (error) {
+        next(error);
+    }
+});
 
-        res.json({
-            success: true,
-            data: { reset: true },
-        });
+// POST /api/classification/drain-queue - Clear all waiting (stuck) jobs
+router.post('/drain-queue', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        await classificationQueue.drain();
+        res.json({ success: true, data: { drained: true } });
     } catch (error) {
         next(error);
     }

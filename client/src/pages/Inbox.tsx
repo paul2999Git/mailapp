@@ -42,10 +42,10 @@ export default function Inbox() {
         queryFn: () => apiRequest<any>('GET', '/classification/stats'),
         refetchInterval: (query) => {
             const data = query.state.data;
-            if (data?.queue && (data.queue.waiting > 0 || data.queue.active > 0)) {
-                return 5000; // Poll every 5s when classification is active
+            if (data?.queue && data.queue.active > 0) {
+                return 10000; // Poll every 10s only when jobs are actively running
             }
-            return 30000; // Check less frequently if nothing is happening
+            return 60000; // Poll every 60s otherwise
         }
     });
 

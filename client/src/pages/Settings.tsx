@@ -226,10 +226,13 @@ export default function Settings() {
         queryFn: () => apiRequest<any>('GET', '/classification/stats'),
         refetchInterval: (query) => {
             const data = query.state.data;
-            if (data?.queue && (data.queue.waiting > 0 || data.queue.active > 0)) {
-                return 1500; // Poll every 1.5s while active
+            if (data?.queue && data.queue.active > 0) {
+                return 5000; // Poll every 5s only when jobs are actively running
             }
-            return 10000; // Poll every 10s otherwise to check for background tasks
+            if (data?.queue && data.queue.waiting > 0) {
+                return 15000; // Poll every 15s when jobs are queued but not yet running
+            }
+            return 60000; // Poll every 60s when idle
         }
     });
 
@@ -251,9 +254,12 @@ export default function Settings() {
 
     const resetQueueMutation = useMutation({
         mutationFn: () => apiRequest('POST', '/classification/reset-queue'),
-        onSuccess: () => {
-            refetchStats();
-        }
+        onSuccess: () => { refetchStats(); }
+    });
+
+    const drainQueueMutation = useMutation({
+        mutationFn: () => apiRequest('POST', '/classification/drain-queue'),
+        onSuccess: () => { refetchStats(); }
     });
 
     const handleCreateCategory = async () => {
@@ -580,6 +586,16 @@ Respond exactly in this JSON format:
                                 <div className="text-sm text-muted">Process all existing unclassified messages through the AI.</div>
                             </div>
                             <div className="flex gap-2">
+                                {stats?.queue.waiting > 0 && (
+                                    <button
+                                        className="btn btn-ghost btn-sm"
+                                        style={{ color: 'var(--color-danger)' }}
+                                        onClick={() => drainQueueMutation.mutate()}
+                                        title="Clear stuck waiting jobs"
+                                    >
+                                        Clear Queue ({stats.queue.waiting})
+                                    </button>
+                                )}
                                 {stats?.queue.failed > 0 && (
                                     <button
                                         className="btn btn-ghost btn-sm"
