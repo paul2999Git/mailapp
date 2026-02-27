@@ -483,6 +483,9 @@ export class ImapAdapter implements IProviderAdapter {
             host: smtpHost,
             port: smtpPort,
             secure: secure,
+            // Bridge uses a self-signed cert; rejectUnauthorized: false lets the
+            // STARTTLS handshake succeed without a trusted CA chain
+            tls: this.provider === 'proton' ? { rejectUnauthorized: false } : undefined,
             auth: {
                 user: this.config.username,
                 pass: this.config.password,
