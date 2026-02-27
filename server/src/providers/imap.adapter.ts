@@ -524,13 +524,14 @@ export class ImapAdapter implements IProviderAdapter {
  */
 export class ProtonAdapter extends ImapAdapter {
     constructor(accountId: string, config: ImapConfig) {
-        // Proton Bridge defaults
+        // Proton Bridge defaults: 127.0.0.1:1143, no TLS (STARTTLS via imapflow)
+        // Legacy: if port 993 was stored (old default), correct to 1143
+        const port = config.port === 993 ? 1143 : (config.port || 1143);
         const protonConfig: ImapConfig = {
             ...config,
             host: config.host || '127.0.0.1',
-            // Force 1143 if user put 993 for localhost (Bridge default)
-            port: (config.host === '127.0.0.1' && config.port === 993) ? 1143 : (config.port || 1143),
-            tls: false, // Proton Bridge uses STARTTLS
+            port,
+            tls: false,
         };
         super('proton', accountId, protonConfig);
     }
