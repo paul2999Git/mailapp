@@ -29,6 +29,9 @@ import oauthRoutes from './routes/oauth.routes';
 
 export const app = express();
 
+// Trust the nginx reverse proxy in front of us (needed for rate limiting and real IPs)
+app.set('trust proxy', 1);
+
 // Security middleware
 app.use(helmet());
 app.use(cors({
