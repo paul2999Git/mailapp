@@ -76,8 +76,8 @@ async function setupRecurringJobs() {
         { type: 'all-accounts' },
         {
             repeat: {
-                cron: '* * * * *', // Fire at the top of every wall-clock minute
-                // Using cron instead of `every` so worker restarts don't reset the timer
+                pattern: '* * * * *', // Fire at the top of every wall-clock minute (BullMQ v5: 'pattern' not 'cron')
+                // Using cron pattern instead of `every` so worker restarts don't reset the timer
             },
             removeOnComplete: 100,
             removeOnFail: 50,
