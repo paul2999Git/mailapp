@@ -693,53 +693,58 @@ Respond exactly in this JSON format:
                     {/* IMAP Form Modal */}
                     {selectedProvider?.startsWith('imap-') && (
                         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-                            <div className="card" style={{ width: '800px', maxWidth: '95vw', padding: 'var(--space-6)' }}>
-                                <h3 style={{ marginBottom: 'var(--space-5)' }}>
-                                    {selectedProvider === 'imap-proton' ? 'Connect Proton Mail (via Bridge)' : 'Connect via IMAP'}
-                                </h3>
+                            <div className="card" style={{ width: '900px', maxWidth: '98vw', padding: 'var(--space-5)' }}>
+                                {/* Title row with action buttons */}
+                                <div className="flex items-center gap-3" style={{ marginBottom: 'var(--space-4)' }}>
+                                    <h3 style={{ margin: 0, flex: 1, fontSize: 'var(--font-size-md)' }}>
+                                        {selectedProvider === 'imap-proton' ? 'Connect Proton Mail (via Bridge)' : 'Connect via IMAP'}
+                                    </h3>
+                                    <button
+                                        className="btn btn-primary"
+                                        style={{ fontSize: '11px', padding: '4px 10px', height: 'auto' }}
+                                        onClick={handleAddAccountImap}
+                                        disabled={addingAccount}
+                                    >
+                                        {addingAccount ? 'Connecting...' : 'Connect Account'}
+                                    </button>
+                                    <button
+                                        className="btn btn-secondary"
+                                        style={{ fontSize: '11px', padding: '4px 10px', height: 'auto' }}
+                                        onClick={() => setSelectedProvider('select')}
+                                    >
+                                        Back
+                                    </button>
+                                </div>
+
                                 {selectedProvider === 'imap-proton' && (
-                                    <div style={{ background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-3)', marginBottom: 'var(--space-4)', fontSize: '13px' }}>
-                                        <strong>Proton Bridge must be running on this server.</strong><br />
-                                        Use the <strong>IMAP password from Bridge</strong> (not your Proton account password).<br />
-                                        Find it in Bridge → {`"`}Mailbox configuration{`"`} after logging in.<br />
-                                        Default host: <code>127.0.0.1</code>, IMAP port: <code>1143</code>, SMTP port: <code>1025</code>.
+                                    <div style={{ background: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-3)', marginBottom: 'var(--space-4)', fontSize: '12px', lineHeight: 1.5 }}>
+                                        <strong>Proton Bridge must be running on this server.</strong> Use the <strong>IMAP password from Bridge</strong> (not your Proton account password).
+                                        Find it in Bridge → "Mailbox configuration" after logging in.
+                                        Defaults: host <code>127.0.0.1</code>, IMAP port <code>1143</code>, SMTP port <code>1025</code>.
                                     </div>
                                 )}
-                                <div className="flex flex-col gap-4">
-                                    <div className="form-group">
-                                        <label className="form-label">Email Address</label>
-                                        <input type="email" className="form-input" value={imapDetails.emailAddress} onChange={e => setImapDetails({ ...imapDetails, emailAddress: e.target.value })} />
-                                    </div>
-                                    <div className="flex gap-3">
-                                        <div className="form-group" style={{ flex: 1 }}>
-                                            <label className="form-label">IMAP Host</label>
-                                            <input type="text" className="form-input" value={imapDetails.imapHost} onChange={e => setImapDetails({ ...imapDetails, imapHost: e.target.value })} />
-                                        </div>
-                                        <div className="form-group" style={{ width: '100px' }}>
-                                            <label className="form-label">Port</label>
-                                            <input type="number" className="form-input" value={imapDetails.imapPort} onChange={e => setImapDetails({ ...imapDetails, imapPort: parseInt(e.target.value) || 993 })} />
-                                        </div>
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Username</label>
-                                        <input type="text" className="form-input" value={imapDetails.imapUsername} onChange={e => setImapDetails({ ...imapDetails, imapUsername: e.target.value })} />
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">{selectedProvider === 'imap-proton' ? 'Bridge IMAP Password' : 'Password'}</label>
-                                        <input type="password" className="form-input" value={imapDetails.imapPassword} onChange={e => setImapDetails({ ...imapDetails, imapPassword: e.target.value })} />
-                                    </div>
-                                    {addAccountError && (
-                                        <div style={{ color: 'var(--color-danger)', fontSize: '13px', padding: 'var(--space-2)', background: 'rgba(var(--color-danger-rgb, 220,38,38),0.1)', borderRadius: 'var(--radius-sm)' }}>
-                                            {addAccountError}
-                                        </div>
-                                    )}
-                                    <div className="flex gap-2 mt-4">
-                                        <button className="btn btn-primary flex-1" onClick={handleAddAccountImap} disabled={addingAccount}>
-                                            {addingAccount ? 'Connecting...' : 'Connect Account'}
-                                        </button>
-                                        <button className="btn btn-secondary" onClick={() => setSelectedProvider('select')}>Back</button>
-                                    </div>
+
+                                {/* Labels row */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr 100px 2fr 2fr', gap: '8px', marginBottom: '4px' }}>
+                                    {['Email Address', 'IMAP Host', 'Port', 'Username', selectedProvider === 'imap-proton' ? 'Bridge IMAP Password' : 'Password'].map(lbl => (
+                                        <span key={lbl} style={{ fontSize: '10px', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{lbl}</span>
+                                    ))}
                                 </div>
+
+                                {/* Inputs row */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr 100px 2fr 2fr', gap: '8px' }}>
+                                    <input type="email" className="form-input" value={imapDetails.emailAddress} onChange={e => setImapDetails({ ...imapDetails, emailAddress: e.target.value })} placeholder="you@example.com" />
+                                    <input type="text" className="form-input" value={imapDetails.imapHost} onChange={e => setImapDetails({ ...imapDetails, imapHost: e.target.value })} placeholder="127.0.0.1" />
+                                    <input type="number" className="form-input" value={imapDetails.imapPort} onChange={e => setImapDetails({ ...imapDetails, imapPort: parseInt(e.target.value) || 993 })} />
+                                    <input type="text" className="form-input" value={imapDetails.imapUsername} onChange={e => setImapDetails({ ...imapDetails, imapUsername: e.target.value })} placeholder="your@email.com" />
+                                    <input type="password" className="form-input" value={imapDetails.imapPassword} onChange={e => setImapDetails({ ...imapDetails, imapPassword: e.target.value })} placeholder="Bridge password" />
+                                </div>
+
+                                {addAccountError && (
+                                    <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '8px', padding: '6px 10px', background: 'rgba(220,38,38,0.1)', borderRadius: 'var(--radius-sm)' }}>
+                                        {addAccountError}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
