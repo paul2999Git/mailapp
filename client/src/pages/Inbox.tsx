@@ -64,6 +64,7 @@ export default function Inbox() {
             isInbox
         }),
         enabled: !isConversationView,
+        refetchInterval: 30000, // Refresh every 30s so newly classified emails appear promptly
     });
 
     const { data: threadsData, isLoading: threadsLoading, error: threadsError } = useQuery({
@@ -75,6 +76,7 @@ export default function Inbox() {
             isInbox
         }),
         enabled: isConversationView,
+        refetchInterval: 30000,
     });
 
     const isLoading = isConversationView ? threadsLoading : messagesLoading;
